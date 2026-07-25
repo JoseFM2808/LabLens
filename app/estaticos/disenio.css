@@ -857,6 +857,104 @@ details > summary {
   padding: var(--e-base) 0;
 }
 
+/* ==========================================================================
+   Puerta de terminos: cubre la app hasta que se aceptan
+   ========================================================================== */
+
+.puerta {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: var(--surface);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.puerta-caja {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: var(--e-lg) var(--margen) calc(var(--e-xl) + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: var(--e-sm);
+}
+
+.texto-legal {
+  background: var(--surface-container-lowest);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-lg);
+  padding: var(--e-md);
+  max-height: 42vh;
+  overflow-y: auto;
+  font-size: 14px;
+  line-height: 21px;
+}
+.texto-legal h2 {
+  font-size: 15px;
+  line-height: 21px;
+  font-weight: 700;
+  margin: var(--e-md) 0 var(--e-xs);
+  color: var(--primary);
+}
+.texto-legal h2:first-child { margin-top: 0; }
+.texto-legal p { margin: 0 0 var(--e-base); }
+.texto-legal ul { margin: 0 0 var(--e-base); padding-left: 20px; }
+.texto-legal li { margin-bottom: 4px; }
+.texto-legal strong { font-weight: 700; }
+
+/* Interruptor con titulo y explicacion debajo */
+.interruptor-fila {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--e-sm);
+  background: var(--surface-container-lowest);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-lg);
+  padding: var(--e-sm) var(--e-md);
+  cursor: pointer;
+}
+.interruptor-fila input {
+  width: 22px;
+  height: 22px;
+  margin-top: 2px;
+  flex-shrink: 0;
+  accent-color: var(--primary);
+}
+.interruptor-fila > span { display: flex; flex-direction: column; gap: 2px; }
+.interruptor-fila strong { font-size: 15px; font-weight: 600; line-height: 20px; }
+.interruptor-fila small { font-size: 12px; line-height: 17px; color: var(--on-surface-variant); }
+.interruptor-fila:has(input:checked) { border-color: var(--primary); background: var(--crema); }
+
+/* Solicitud de datos con su cuenta atras */
+.solicitud {
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-lg);
+  background: var(--surface-container-lowest);
+  padding: var(--e-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--e-base);
+  box-shadow: var(--sombra-1);
+}
+.solicitud.en_aviso { border-color: var(--aviso); background: var(--crema); }
+.solicitud.declinada, .solicitud.cancelada { opacity: 0.72; }
+.solicitud .encabezado {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--e-base);
+}
+.solicitud .quien { font-size: 15px; font-weight: 700; }
+.solicitud .detalle { font-size: 13px; line-height: 18px; color: var(--on-surface-variant); }
+.solicitud .cuenta {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--aviso);
+}
+.solicitud .acciones { display: flex; gap: var(--e-base); flex-wrap: wrap; }
+.solicitud .acciones .btn { min-height: 44px; width: auto; flex: 1; font-size: 13px; }
+
+#simulador-solicitud { margin-top: var(--e-base); }
+
 .oculto { display: none !important; }
 .imagen-documento {
   width: 100%;

@@ -9,53 +9,63 @@ marcado **[VERIFICAR]**.
 
 | Bloque | Tiempo | Idea unica |
 |---|---|---|
-| 1. Problema | 1 min | El papel dice "normal" cuando la norma dice "anemia moderada". |
-| 2. Solucion y demo | 2.5 min | La app hace la resta que nadie hace, y declara lo que no sabe. |
-| 3. Arquitectura y Gemma | 1 min | Gemma lee y explica; nunca calcula ni decide. |
+| 1. Problema | 1 min | Un documento medico en papel es un dato muerto: ilegible, incomparable y sin contexto. |
+| 2. Solucion y demo | 2.5 min | Cualquier documento medico entra; sale un historial comparado contra la norma. |
+| 3. Arquitectura y Gemma | 1 min | Gemma lee y explica; el criterio clinico vive en tablas, no en el modelo. |
 | 4. Impacto y siguiente paso | 30 s | Salud (ODS 3) para quien el sistema medía mal (ODS 10). |
+
+> **Regla de encuadre.** LabLens **no es una app de anemia**. Es un sistema general
+> de digitalizacion y evaluacion de documentos medicos. El caso de la hemoglobina
+> en altura aparece **una sola vez**, como demostracion de por que leer el
+> documento no alcanza. Si el jurado se va pensando "app de anemia", el pitch
+> fallo.
 
 ---
 
 ## Bloque 1 — Problema (1 min)
 
-> **Frase de apertura, mirando a la sala:**
+> **Frase de apertura**, levantando un examen impreso:
 >
-> "Esta hemoglobina dice 13.8. En el papel, normal. En la persona que se la
-> hizo, es anemia moderada. Y nadie en la cadena se dio cuenta."
+> "Esto ya se hizo. Ya se pago. Y desde que salio de la impresora, no sirve para
+> nada mas."
 
 **El guion:**
 
-En el Peru un analisis de laboratorio termina en una hoja impresa. Se guarda en
-un cajon, se pierde, y el siguiente medico empieza de cero. No hay historial: hay
-papeles sueltos.
+En el Peru los resultados medicos terminan en papel. Un hemograma, una ecografia,
+un control de signos vitales, un examen de orina. Se guardan en un sobre, se
+pierden, y el siguiente medico empieza de cero.
 
-Pero el problema real no es el archivo. Es que **el papel miente por omision**.
+**Y un documento medico en papel falla en tres cosas a la vez:**
+
+| Falla | Que significa |
+|---|---|
+| **1. No es legible** | Ningun sistema puede leerlo. Los datos existen, pero no entran a ningun lado. |
+| **2. No es comparable** | Cada examen es una isla. Nadie ve si tu glucosa subio o bajo respecto al del anio pasado. |
+| **3. No tiene contexto** | El rango impreso es generico. No sabe tu edad, tu sexo, tu condicion ni donde vives. |
+
+Las dos primeras se entienden solas. **La tercera es la que nadie ve, y es la
+grave.** Un ejemplo:
 
 La NTS 213 del MINSA dice que la hemoglobina se ajusta por la altitud donde vive
 la persona. Sobre los 500 msnm hay que **restar**. En Cerro de Pasco, a 4 373
 metros, se restan 2.9 puntos.
 
-- Papel: Hemoglobina 13.8 g/dl. Rango del laboratorio: normal.
+- Papel: Hemoglobina 13.8 g/dl. Rango del laboratorio: **normal**.
 - Norma: 13.8 − 2.9 = **10.9 → anemia moderada**.
 
 El laboratorio no hizo nada mal: imprimio su rango. Pero ese rango vale a nivel
-del mar, y quien lo lee no siempre hace la resta.
-
-Y esto no es un caso raro. Del padron de 1 895 distritos que ya tenemos cargado,
-**1 448 estan sobre los 500 msnm** y **802 sobre los 3 000**. Tres de cada cuatro
-distritos del pais necesitan esa correccion.
+del mar. Y de los 1 895 distritos del padron, **1 448 estan sobre 500 msnm**.
+Tres de cada cuatro distritos del pais necesitan esa correccion.
 **[VERIFICAR: cifra oficial de prevalencia de anemia — ENDES/INEI, con fuente]**
 
-**Y no lo decimos solo nosotros.** La metodologia oficial de la OMS y Naciones
-Unidas para medir anemia establece la hemoglobina *"adjusted for altitude and
-smoking"* — ajustada por altitud. El ajuste **es parte de la definicion
-internacional del dato**. No es un detalle peruano: es el estandar, y en el papel
-impreso no se aplica.
+**Y esto no pasa solo con la hemoglobina.** Es el patron: los rangos cambian por
+edad, por sexo, por condicion — no gestante, gestante por trimestre, puerpera — y
+por altitud. Cuatro variables que el papel no cruza, en cualquier examen.
 
 **Cierre del bloque:**
 
-"No es que falte el examen. El examen ya se hizo y ya se pago. Lo que falta es
-que alguien lo lea bien."
+"Digitalizar el papel resuelve las dos primeras fallas. Nosotros fuimos por las
+tres."
 
 ---
 
@@ -65,18 +75,29 @@ que alguien lo lea bien."
 > Cronometrar: si la extraccion pasa de 40 s, seguir hablando sobre el Bloque 3
 > y volver. **No esperar en silencio.**
 
-**Frase puente:** "LabLens es el scanner que si hace la resta."
+**Frase puente:** "Le tomas una foto a cualquier documento medico y sale un
+historial ya comparado contra la norma peruana."
 
-### Recorrido — 6 pasos
+### Recorrido — 7 pasos
 
 | # | Vista | Que se muestra | Que se dice mientras |
 |---|---|---|---|
-| 1 | **Usuario** | Fecha de nacimiento, sexo, condicion, distrito del padron | "Cero nombres. La base **no tiene columna de nombre**. Pide cuatro datos porque los cuatro entran al calculo." |
-| 2 | **Usuario** → distrito | Escribir "bellav" → aparecen 4 Bellavista con altitud | "Hay cuatro Bellavista en el Peru. Una esta a 13 msnm y otra en la sierra. Elegir mal cambia el resultado, asi que se elige de un padron de 1 895 distritos, no se escribe a mano." |
-| 3 | **Escanear** | Marco guia, esquinas en vivo, ambar → verde, captura | "La deteccion corre en el servidor, 8 a 11 ms por cuadro. Ambar es 'todavia no', verde es 'ya'. Puede capturar solo al alinear." |
-| 4 | **Resultado** | La foto queda plana y enderezada al instante | "Esto es instantaneo. La lectura sigue en segundo plano: el telefono no se queda esperando." |
-| 5 | **Analisis** | Grupos por sistema corporal, % dentro de rango, tendencia | "Aca esta la resta. Hemoglobina 13.8, evaluada 10.9, y **dice por que**: ajustada por altitud de residencia, NTS 213 §5.3.2." |
-| 6 | **Asistente** | Preguntar: *"¿por que mi hemoglobina sale fuera si el papel decia normal?"* | "El modelo explica. No calcula, no diagnostica, no receta. Y solo puede usar cifras que la app ya calculo." |
+| 1 | **Usuario** | Fecha de nacimiento, sexo, condicion, distrito del padron | "Cero nombres. La base **no tiene columna de nombre**. Pide cuatro datos porque los cuatro cambian los rangos: edad, sexo, condicion y altitud." |
+| 2 | **Usuario** → distrito | Escribir "bellav" → aparecen 4 Bellavista con altitud | "Hay cuatro Bellavista en el Peru. Una a 13 msnm y otra en la sierra. Por eso se elige de un padron de 1 895 distritos, no se escribe a mano." |
+| 3 | **Escanear** | Marco guia, esquinas en vivo, ambar → verde, captura | "Deteccion en el servidor, 8 a 11 ms por cuadro. Funciona con cualquier hoja: A4, carta, ticket o carnet." |
+| 4 | **Resultado** | La foto queda plana y enderezada al instante | "Instantaneo. La lectura sigue en segundo plano: el telefono no se queda esperando." |
+| 5 | **Documentos** ⭐ | El historial con los tipos mezclados | **"Aca esta el punto: esto no es un lector de hemogramas."** Laboratorio, ecografia pelvica, control de signos vitales, orina completa. Todo entra por la misma camara. |
+| 6 | **Analisis** ⭐ | Los grupos por sistema corporal | "Hematologia, bioquimica, ginecologia, signos vitales, orina, antropometria. **Siete sistemas corporales, un solo flujo.** Y cada valor comparado contra el rango que le toca a esta persona." |
+| 7 | **Asistente** | Preguntar algo del historial completo | "El modelo explica. No calcula, no diagnostica, no receta. Solo usa cifras que la app ya calculo." |
+
+**El momento de la demostracion** (dentro del paso 6, sin cambiar de pantalla):
+
+> "Y aca esta por que el contexto importa. Esta hemoglobina dice 13.8 en el papel.
+> La app la evalua en 10.9 y **dice por que**: se restaron 2.9 puntos por la
+> altitud de residencia, NTS 213 §5.3.2. El papel decia normal. La norma dice
+> anemia moderada."
+
+Es **una frase**, no un bloque. Se dice, se deja respirar y se sigue.
 
 ### Los tres detalles que hay que decir si o si
 
@@ -97,8 +118,11 @@ que alguien lo lea bien."
 ### Plan B si falla la red o la camara
 
 - Usuario de relleno ya sembrado: `usuario-relleno`, Chaupimarca, 4 373 msnm.
-- Muestra la serie completa sin escanear nada:
-  `Hb 13.8 (marzo) → 10.9 anemia MODERADA` · `Hb 14.6 (julio) → 11.7 anemia LEVE`
+- Trae **4 documentos y 52 valores en 6 estudios**, cruzando hematologia,
+  bioquimica, ginecologia, signos vitales y antropometria. Sirve igual para
+  mostrar la amplitud.
+- Y muestra la serie en el tiempo sin escanear nada:
+  `Hb 13.8 (marzo) → 10.9 moderada` · `Hb 14.6 (julio) → 11.7 leve` *(mejora)*
 - Es el mismo recorrido desde el paso 5. Se avisa que es data de relleno.
 
 ---
@@ -150,6 +174,28 @@ Comparativa SQL                         [SQL, SIN modelo]
   El ajuste por altitud lo hace SQL, no el modelo. Pedirle a un LLM que reste
   2.9 a una hemoglobina es darle una tarea clinica, y ahi no va.
 
+### Por que el sistema es general y no esta cableado a una patologia
+
+> "En todo ese pipeline no hay una sola linea de codigo que diga 'hemoglobina'."
+
+- **El criterio clinico es dato, no codigo.** Los rangos, los factores de altitud,
+  los umbrales de alerta y los codigos CIE-10 viven en tablas
+  (`rango_referencia`, `ajuste_altitud`, `umbral_alerta`, `codigo_cie10`).
+  Agregar un dominio nuevo es **cargar filas, no escribir codigo**.
+- **El catalogo resuelve por nombre + unidad.** `Glucosa` en `mg/dl` es sangre;
+  `Glucosa` sin unidad es una tira de orina. Son dos biomarcadores distintos y se
+  evaluan contra rangos distintos. Lo que no calza no se descarta: entra como
+  `sin_clasificar` para curarlo despues.
+- **Lo que ya procesa hoy**, sin cambios de codigo entre uno y otro:
+
+| Tipo de documento | Sistemas corporales que ya poblaron la base |
+|---|---|
+| Laboratorio | hematologia · bioquimica · orina |
+| Imagenologia (ecografia pelvica) | ginecologia |
+| Control clinico | signos vitales · antropometria · oftalmologia |
+
+**7 sistemas corporales, 79 biomarcadores, 211 mediciones.** Un solo flujo.
+
 ### Como se evita que alucine — en 20 segundos
 
 > "Un modelo que inventa un numero en un examen de sangre es peor que no tener
@@ -194,19 +240,22 @@ Comparativa SQL                         [SQL, SIN modelo]
 > frase dicha dos veces."
 
 - **ODS 3 — Salud y bienestar.** *¿Sirve para la salud de alguien?*
-  No pide un examen nuevo: **lee bien el que ya se hizo y ya se pago**. Convierte
-  papel suelto en historial, y detecta lo que el rango impreso no muestra.
+  No pide examenes nuevos: **lee bien los que ya se hicieron y ya se pagaron**.
+  Convierte papel suelto en historial comparable, en cualquier area — sangre,
+  imagen, signos vitales.
 - **ODS 10 — Reduccion de las desigualdades.** *¿Para quien sirve, y a quien
   estaba dejando fuera el sistema?*
-  Un rango calculado a nivel del mar aplicado a alguien que vive a 4 373 metros
-  **no es un error de esa persona: es un sesgo del instrumento**. La misma sangre
-  recibe distinto diagnostico segun quien lea el papel. Eso es desigualdad de
-  resultado, y es corregible con una resta.
+  Un rango de referencia que no sabe quien eres **no es neutral: falla siempre
+  contra los mismos**. El caso mas medible es la altitud, pero el patron es el
+  mismo con la edad, el sexo y la condicion. Eso es desigualdad de resultado, y
+  es corregible.
 
 *(Metas e indicadores exactos: **Anexo A**.)*
 
 ### A quien beneficia
 
+- **Cualquiera que acumule papeles medicos.** Es el caso general: un sobre con
+  examenes de cinco anios se vuelve una linea de tiempo.
 - **Quien vive en altura.** De los 1 895 distritos cargados, **1 448 estan sobre
   500 msnm y 802 sobre 3 000**. Tres de cada cuatro distritos del pais.
 - **Gestantes y puerperas.** La NTS 213 estratifica por trimestre; LabLens es el
@@ -217,22 +266,24 @@ Comparativa SQL                         [SQL, SIN modelo]
 
 ### Que sigue — en orden
 
-1. **Curar 29 biomarcadores** que Gemma lee (VOLUMEN, DENSIDAD, REACCION) y aun
-   no calzan con el catalogo. Sin eso no tienen rango contra que compararse.
+1. **Ampliar la cobertura del catalogo.** Hoy 47 de los 79 biomarcadores medidos
+   siguen `sin_clasificar`: Gemma los lee bien, pero todavia no tienen rango
+   contra que compararse. Es el cuello de botella de la generalidad, y se
+   resuelve cargando filas, no escribiendo codigo.
 2. **Cerrar los huecos normativos** que la app dejo al descubierto: la ventana de
    endometrio entre 14 y 15 mm no tiene rango, y 46 de los 111 rangos siguen sin
    organismo que los cite.
 3. **Bajar a `gemma-4-E4B-it` en el dispositivo.** Sin nube, sin señal y sin que
    ningun dato de salud salga del telefono. Ver **Anexo B**.
-4. **Piloto en una posta de altura**, midiendo una sola cosa: cuantas anemias
-   aparecen que el papel dejaba pasar.
+4. **Piloto en una posta**, midiendo una sola cosa: cuantos hallazgos aparecen
+   que el papel dejaba pasar.
 
 ### Cierre
 
-> "Salud, porque el examen ya estaba hecho y nadie lo estaba leyendo bien.
-> Igualdad, porque leerlo mal no le pasa a cualquiera: le pasa siempre a los
-> mismos, a los que viven arriba. Gemma lee el papel, la norma hace la resta, y
-> el dato por fin dice lo que siempre dijo."
+> "Todos estos examenes ya se hicieron. Ya se pagaron. Estan en un sobre.
+> Salud, porque leerlos bien no cuesta un examen mas. Igualdad, porque leerlos
+> mal no le pasa a cualquiera: le pasa siempre a los mismos. Gemma lee el papel,
+> la norma pone el criterio, y el dato por fin dice lo que siempre dijo."
 
 ---
 ---
@@ -248,7 +299,7 @@ distintas, y el proyecto tiene que sostener las dos.
 | | La pregunta que responde | La respuesta de LabLens |
 |---|---|---|
 | **ODS 3** | ¿Sirve para la salud de alguien? | Convierte un examen ya hecho y ya pagado en un dato correcto y consultable. |
-| **ODS 10** | ¿Para quien sirve, y a quien dejaba fuera el sistema? | Corrige un sesgo de medicion que golpea siempre a la misma poblacion: la que vive en altura. |
+| **ODS 10** | ¿Para quien sirve, y a quien dejaba fuera el sistema? | Corrige rangos de referencia ciegos al contexto, que fallan siempre contra la misma poblacion. |
 
 ---
 
@@ -264,10 +315,14 @@ poblacion general y los mas desfavorecidos"*, usando intervenciones trazadoras d
 salud reproductiva, materna y neonatal, enfermedades no transmisibles y
 **capacidad de los servicios y acceso a ellos**.
 
-**Como lo mueve LabLens:** no pide un examen nuevo. El examen ya se hizo, ya se
-pago y ya esta impreso. **El costo marginal de leerlo bien es cero.** Ampliar
+**Como lo mueve LabLens:** no pide examenes nuevos. Ya se hicieron, ya se pagaron
+y ya estan impresos. **El costo marginal de leerlos bien es cero.** Ampliar
 cobertura sin ampliar gasto es exactamente lo que 3.8 persigue, y ataca el pilar
 mas barato de los tres: aprovechar el servicio que ya se presto.
+
+Y aplica a **todas** las trazadoras que menciona el indicador, no a una: la base
+ya tiene poblados hematologia, bioquimica, orina, ginecologia, signos vitales,
+antropometria y oftalmologia.
 
 #### Meta 3.4 — Enfermedades no transmisibles
 
@@ -296,17 +351,18 @@ adultas simplemente no aplican y el sistema cae a un panel generico sin cita.
 
 #### El respaldo documental que conviene tener a mano
 
-La metodologia oficial OMS/ONU para medir anemia en mujeres de 15 a 49 anios
-define el umbral como hemoglobina bajo 120 g/L (no gestantes) y bajo 110 g/L
-(gestantes), **"adjusted for altitude and smoking"**.
+Si piden probar que "el rango tiene que conocer el contexto" no es una idea
+nuestra, este es el ejemplo mas citable: la metodologia oficial OMS/ONU para medir
+anemia define el umbral como hemoglobina bajo 120 g/L (no gestantes) y bajo
+110 g/L (gestantes), **"adjusted for altitude and smoking"**.
 
-> No lo presentamos como "nuestro ODS". Lo presentamos como lo que es: **la prueba
-> documental, escrita por la OMS, de que la correccion que automatizamos es el
-> estandar internacional** — y de que en el papel impreso no se esta aplicando.
+> Es **un** caso, no nuestro alcance. Sirve como prueba documental, escrita por la
+> OMS, de que el criterio contextualizado que aplicamos en todo el catalogo ya es
+> el estandar internacional — y de que en el papel impreso no se esta aplicando.
 
-Si alguien del jurado conoce la Agenda 2030, va a reconocer que ese umbral es el
-del indicador 2.2.3 (ODS 2, nutricion). Se puede mencionar como referencia
-cruzada, sin reclamarlo como objetivo propio.
+Si alguien del jurado conoce la Agenda 2030, reconocera que ese umbral es el del
+indicador 2.2.3 (ODS 2, nutricion). Se menciona como referencia cruzada, sin
+reclamarlo como objetivo propio.
 
 ---
 
@@ -321,15 +377,24 @@ pueden sostener ODS 10 con un numero.
 > resultados**, incluso eliminando las leyes, politicas y **practicas
 > discriminatorias**..."*
 
-**El argumento, en una frase:** aplicar un rango de referencia calculado a nivel
-del mar a una persona que vive a 4 373 metros **no es un error de esa persona: es
-un sesgo del instrumento**.
+**El argumento, en una frase:** un rango de referencia impreso **no sabe quien
+eres**, y esa ceguera no reparte el error al azar — **falla siempre contra los
+mismos**.
 
 - No hay mala intencion. Es una practica heredada, y por eso nadie la revisa.
-- Pero el efecto es sistematico y siempre en la misma direccion: **la anemia en
-  altura se subdiagnostica**.
-- Y produce literalmente *desigualdad de resultados*: la misma sangre recibe
-  distinto diagnostico segun donde viva quien la donó.
+- Pero el efecto es sistematico: quien se aleja del "paciente promedio" del que
+  salio ese rango recibe una lectura peor. Y quien se aleja mas es siempre la
+  misma gente.
+- Produce literalmente *desigualdad de resultados*: **el mismo valor medido
+  recibe distinta conclusion segun quien lo lea.**
+
+**El caso mas medible es la altitud**, porque el sesgo es cuantificable al punto
+decimal: 13.8 g/dl es normal a nivel del mar y anemia moderada a 4 373 metros. La
+NTS 213 lo tabula, y 1 448 de 1 895 distritos caen en el rango donde aplica.
+
+Pero el mismo patron opera con las otras tres variables: un rango que ignora la
+edad, el sexo o la condicion de gestacion produce el mismo tipo de error, solo que
+mas dificil de ver.
 
 #### Meta 10.2 — Inclusion independientemente de la condicion
 
@@ -347,8 +412,8 @@ esas cuatro.
 | Desigualdad | Evidencia | Que hace LabLens |
 |---|---|---|
 | **Geografica de medicion** | 1 448 de 1 895 distritos sobre 500 msnm; 802 sobre 3 000 | Aplica el factor de la NTS 213 segun la residencia declarada, no segun donde se hizo el analisis (§5.3.2). |
-| **De lectura experta** | Quien tiene medico de cabecera recibe la resta; quien recoge su sobre en una posta, no. | La resta deja de depender de a quien le toco leer el papel. |
-| **De datos** | "No dejar a nadie atras" exige datos desagregados; la anemia en altura se diluye en promedios nacionales. | Cada medicion queda estratificada por edad, sexo, condicion y altitud, con su cita normativa. |
+| **De lectura experta** | Quien tiene medico de cabecera recibe la interpretacion contextualizada; quien recoge su sobre en una posta, no. | El criterio deja de depender de a quien le toco leer el papel. |
+| **De datos** | "No dejar a nadie atras" exige datos desagregados; las poblaciones chicas se diluyen en promedios nacionales. | Cada medicion queda estratificada por edad, sexo, condicion y altitud, con su cita normativa. |
 
 #### La contra que hay que decir antes de que la digan
 
@@ -370,12 +435,61 @@ Decir esto **antes** de que lo pregunten cambia la lectura del jurado: pasa de
 
 ### Como decirlo en 20 segundos si preguntan
 
-> "Dos ODS. El 3, porque no pedimos un examen nuevo: leemos bien el que ya se hizo
-> y ya se pago — eso es cobertura sin gasto adicional, meta 3.8. Y el 10, que es
-> el que de verdad nos define: un rango de nivel del mar aplicado a alguien a
-> 4 000 metros es un sesgo del instrumento, no un error del paciente. Meta 10.3
-> habla de eliminar practicas que producen desigualdad de resultados. Esta es una,
-> y se corrige con una resta que hoy nadie hace."
+> "Dos ODS. El 3, porque no pedimos examenes nuevos: leemos bien los que ya se
+> hicieron y ya se pagaron — cobertura sin gasto adicional, meta 3.8. Y el 10, que
+> es el que de verdad nos define: un rango de referencia que no sabe quien eres no
+> es neutral, falla siempre contra los mismos. Meta 10.3 habla de eliminar
+> practicas que producen desigualdad de resultados. Esa es una, y el caso mas
+> medible es la altitud: 13.8 de hemoglobina es normal en Lima y anemia moderada
+> en Cerro de Pasco."
+
+---
+
+## Anexo A2 — Alcance real del sistema (datos de la base)
+
+Para responder "¿esto solo sirve para exámenes de sangre?" con numeros y no con
+adjetivos. Todo sale de `datos/qhali.sqlite3`.
+
+### Tipos de documento ya procesados
+
+| Tipo | Documentos |
+|---|---:|
+| Laboratorio | 24 |
+| Signos vitales | 1 |
+| Imagenologia | 1 |
+
+### Sistemas corporales con mediciones reales
+
+| Sistema | Biomarcadores | Mediciones |
+|---|---:|---:|
+| Hematologia | 21 | 81 |
+| Bioquimica | 6 | 17 |
+| Signos vitales | 6 | 12 |
+| Orina | 2 | 8 |
+| Antropometria | 3 | 4 |
+| Ginecologia | 3 | 3 |
+| *Sin clasificar (pendiente de curar)* | 47 | 113 |
+
+### Ejemplos concretos de lo que ya leyo Gemma
+
+| Area | Biomarcadores extraidos de documentos reales |
+|---|---|
+| Hemograma | Hemoglobina, Hematocrito, Leucocitos, Linfocitos, Monocitos, Eosinofilos, Basofilos, HCM, CHCM |
+| Perfil lipidico | Colesterol total, HDL, LDL, Trigliceridos |
+| Quimica | Glucosa, Creatinina, Ferritina serica |
+| Orina completa | Densidad, Aspecto, Color, Nitritos, Cuerpos cetonicos, Cristales, Cilindros, Germenes, Parasitos, Hongos, Celulas epiteliales |
+| Ecografia pelvica | Espesor del endometrio, Dimensiones utero, Dimensiones ovario derecho e izquierdo |
+| Signos vitales | Frecuencia cardiaca, Frecuencia respiratoria |
+| Antropometria | IMC, % de grasa corporal |
+| Oftalmologia | Fondo de ojo OD/OI, Agudeza de cerca sin correctores, Ametropia |
+
+**Lo que esto demuestra:** el mismo prompt, el mismo pipeline y el mismo modelo
+procesan una tabla de hemograma, un informe narrativo de ecografia y una ficha de
+control clinico. No hay ramas por tipo de documento en el codigo.
+
+**Y el limite honesto:** 47 biomarcadores siguen `sin_clasificar`. Gemma los lee
+correctamente; lo que falta es el rango normativo contra el cual compararlos. Es
+trabajo de catalogo, no de modelo.
 
 ---
 
@@ -685,6 +799,8 @@ Aunque Gemma acierte o falle, tres cosas se hacen sin el:
 
 | Pregunta | Respuesta corta |
 |---|---|
+| **"¿Esto solo sirve para anemia?"** | No. La anemia es la demostracion de por que el contexto importa, no el alcance. Ya procesa laboratorio, ecografia, signos vitales, orina, antropometria y oftalmologia: **7 sistemas corporales, 79 biomarcadores, 211 mediciones**, con el mismo prompt y el mismo pipeline. (Anexo A2) |
+| **"¿Como agregan un dominio nuevo?"** | Cargando filas en `rango_referencia`, no escribiendo codigo. El criterio clinico vive en tablas; el pipeline no tiene ramas por tipo de documento. |
 | "¿Y si Gemma se equivoca en un numero?" | Se guarda la imagen original y el JSON de auditoria. Y no confiamos en su juicio: el "fuera de rango" **se recalcula** en Python; lo que dijo el modelo se guarda aparte para medir su acierto. (C.7) |
 | "¿Esto diagnostica?" | No, y esta prohibido en la regla 1 del system prompt. Explica el dato y deriva a un profesional. (C.4) |
 | "¿Como evitan que el chat invente cifras?" | No tiene herramientas ni acceso a la base. Solo ve un bloque CONTEXTO armado por SQL, y la regla 2 le prohibe usar cifras que no esten ahi. (C.4, C.5) |

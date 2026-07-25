@@ -107,6 +107,27 @@
     campoEtiqueta: $('campo-etiqueta'),
     inpEtiqueta: $('inp-etiqueta'),
     tituloDatosPerfil: $('titulo-datos-perfil'),
+    // terminos
+    puertaTerminos: $('puerta-terminos'),
+    versionTerminos: $('version-terminos'),
+    textoTerminos: $('texto-terminos'),
+    chkCompartirInicial: $('chk-compartir-inicial'),
+    chkMigracionInicial: $('chk-migracion-inicial'),
+    selPostMortemInicial: $('sel-post-mortem-inicial'),
+    chkAcepto: $('chk-acepto'),
+    btnAceptarTerminos: $('btn-aceptar-terminos'),
+    estadoTerminos: $('estado-terminos'),
+    // privacidad
+    chkCompartir: $('chk-compartir'),
+    chkMigracion: $('chk-migracion'),
+    selPostMortem: $('sel-post-mortem'),
+    notaCompartir: $('nota-compartir'),
+    tarjetaInactividad: $('tarjeta-inactividad'),
+    estadoPrivacidad: $('estado-privacidad'),
+    listaSolicitudes: $('lista-solicitudes'),
+    inpSolicitante: $('inp-solicitante'),
+    inpMotivo: $('inp-motivo'),
+    btnCrearSolicitud: $('btn-crear-solicitud'),
     estadoUsuario: $('estado-usuario'),
     metaSistema: $('meta-sistema'),
   };
@@ -135,6 +156,7 @@
     // análisis y documento
     perfiles: [],
     creandoPerfil: false,
+    consentimiento: null,
     confirmandoBorrado: null,   // boton armado esperando el segundo toque
     textoOriginalBorrado: null,
     tiempoConfirmacion: null,
@@ -910,6 +932,246 @@
   }
 
   // ======================================================================
+  // Terminos y consentimiento
+  // ======================================================================
+
+  // Markdown minimo: solo lo que usa el texto de los terminos (##, **, -).
+  // No se trae una libreria para esto, y el texto lo controla el servidor.
+  function legalAHtml(texto) {
+    const bloques = [];
+    let lista = [];
+    const cerrarLista = () => {
+      if (lista.length) {
+        bloques.push(`<ul>${lista.map((l) => `<li>${l}</li>`).join('')}</ul>`);
+        lista = [];
+      }
+    };
+    const negrita = (t) =>
+      escapar(t).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+    for (const linea of texto.split('\n')) {
+      const limpia = linea.trim();
+      if (limpia.startsWith('## ')) {
+        cerrarLista();
+        bloques.push(`<h2>${negrita(limpia.slice(3))}</h2>`);
+      } else if (limpia.startsWith('- ')) {
+        lista.push(negrita(limpia.slice(2)));
+      } else if (!limpia) {
+        cerrarLista();
+      } else {
+        cerrarLista();
+        bloques.push(`<p>${negrita(limpia)}</p>`);
+      }
+    }
+    cerrarLista();
+    return bloques.join('');
+  }
+
+  async function comprobarTerminos() {
+    let datos;
+    try {
+      datos = await (await fetch('/api/terminos')).json();
+    } catch (error) {
+      return true; // sin servidor no se bloquea la app; ya hay otro aviso
+    }
+    if (datos.aceptados) {
+      el.puertaTerminos.classList.add('oculto');
+      return true;
+    }
+    el.versionTerminos.textContent =
+      `Versión ${datos.version} · aviso previo de ${datos.dias_de_aviso} días · ` +
+      `inactividad de ${datos.anios_inactividad} años`;
+    el.textoTerminos.innerHTML = legalAHtml(datos.texto);
+    el.puertaTerminos.classList.remove('oculto');
+    return false;
+  }
+
+  async function aceptarTerminos() {
+    el.btnAceptarTerminos.disabled = true;
+    try {
+      const cuerpo = new FormData();
+      cuerpo.append('compartir_red_medica', el.chkCompartirInicial.checked ? 'true' : 'false');
+      cuerpo.append('migracion_automatica', el.chkMigracionInicial.checked ? 'true' : 'false');
+      cuerpo.append('directiva_post_mortem', el.selPostMortemInicial.value);
+      const datos = await (await fetch('/api/terminos/aceptar', {
+        method: 'POST', body: cuerpo,
+      })).json();
+      if (!datos.ok) throw new Error(datos.error || 'no se pudo registrar');
+      el.puertaTerminos.classList.add('oculto');
+      cargarInicio();
+    } catch (error) {
+      el.estadoTerminos.className = 'estado error';
+      el.estadoTerminos.textContent = `Error: ${error.message}`;
+      el.btnAceptarTerminos.disabled = false;
+    }
+  }
+
+  async function cargarPrivacidad() {
+    let datos;
+    try {
+      datos = await (await fetch('/api/consentimiento')).json();
+    } catch (error) {
+      return;
+    }
+    estado.consentimiento = datos;
+    const p = datos.preferencias;
+
+    el.chkCompartir.checked = p.compartir_red_medica;
+    el.chkMigracion.checked = p.migracion_automatica;
+    el.selPostMortem.value = p.directiva_post_mortem;
+    // La migracion automatica no significa nada sin compartir activado.
+    el.chkMigracion.disabled = !p.compartir_red_medica;
+
+    el.notaCompartir.textContent = p.compartir_red_medica
+      ? `Activado. Cada solicitud abre un aviso de ${datos.dias_de_aviso} días antes de entregar nada.`
+      : 'Desactivado. Nadie recibe tus datos.';
+
+    // Inactividad y post mortem
+    const pm = datos.post_mortem;
+    const dias = pm.dias_sin_informacion;
+    const filas = [
+      ['Última información', pm.ultima_actividad ? fechaCorta(pm.ultima_actividad) : '—'],
+      ['Sin datos nuevos desde', dias === null ? '—' : `${dias} día${dias === 1 ? '' : 's'}`],
+      ['Se aplicaría el', pm.se_aplica_el ? fechaCorta(pm.se_aplica_el) : '—'],
+      ['Estado', pm.inactivo ? 'INACTIVO: directiva aplicada' : 'Activo'],
+    ];
+    if (pm.aplicado_en) filas.push(['Directiva aplicada el', fechaCorta(pm.aplicado_en)]);
+    el.tarjetaInactividad.innerHTML =
+      `<dl class="meta">${filas
+        .map(([c, v]) => `<dt>${escapar(c)}</dt><dd>${escapar(v)}</dd>`)
+        .join('')}</dl>` +
+      `<p class="descargo" style="margin-top:10px">${
+        p.directiva_post_mortem === 'mantener'
+          ? 'Si el perfil queda inactivo, la compartición <strong>no se revierte</strong>.'
+          : 'Si el perfil queda inactivo, la compartición <strong>se apaga</strong> y tus datos dejan de compartirse.'
+      }</p>`;
+
+    pintarSolicitudes(datos);
+
+    if (!datos.transmision.habilitada) {
+      el.estadoPrivacidad.className = 'estado';
+      el.estadoPrivacidad.textContent = datos.transmision.nota;
+    }
+  }
+
+  const ETIQUETA_SOLICITUD = {
+    en_aviso: 'En aviso',
+    declinada: 'Declinada',
+    autorizada: 'Autorizada',
+    lista_para_compartir: 'Lista para compartir',
+    cancelada: 'Cancelada',
+  };
+
+  function pintarSolicitudes(datos) {
+    const lista = datos.solicitudes || [];
+    if (!lista.length) {
+      el.listaSolicitudes.innerHTML =
+        `<div class="vacio">${icono('info')}<p class="body-md">
+          Ninguna red médica ha solicitado tus datos.</p></div>`;
+      return;
+    }
+    el.listaSolicitudes.innerHTML = lista
+      .map((s) => {
+        const enCurso = s.estado === 'en_aviso' || s.estado === 'autorizada';
+        const cuenta = enCurso && s.dias_restantes !== null
+          ? `<span class="cuenta">${s.dias_restantes} día${s.dias_restantes === 1 ? '' : 's'} para declinar</span>`
+          : '';
+        const acciones = enCurso
+          ? `<div class="acciones">
+               <button class="btn btn-peligro" data-declinar="${escapar(s.id)}">Declinar</button>
+               ${s.estado === 'en_aviso'
+                 ? `<button class="btn btn-primario" data-autorizar="${escapar(s.id)}">Autorizar</button>`
+                 : ''}
+             </div>`
+          : '';
+        const detalles = [
+          s.motivo,
+          `Solicitado el ${fechaCorta(s.solicitado_en)}`,
+          enCurso ? `Se entregaría el ${fechaCorta(s.comparte_en)}` : null,
+          s.nota,
+        ].filter(Boolean);
+        return `
+        <div class="solicitud ${s.estado}">
+          <div class="encabezado">
+            <span class="quien">${escapar(s.solicitante)}</span>
+            <span class="chip ${
+              s.estado === 'declinada' || s.estado === 'cancelada' ? 'chip-duda'
+                : s.estado === 'en_aviso' ? 'chip-alerta' : 'chip-ok'
+            }">${escapar(ETIQUETA_SOLICITUD[s.estado] || s.estado)}</span>
+          </div>
+          ${cuenta}
+          <p class="detalle">${detalles.map(escapar).join('<br />')}</p>
+          ${acciones}
+        </div>`;
+      })
+      .join('');
+  }
+
+  async function guardarPreferencias(cambios) {
+    const cuerpo = new FormData();
+    for (const [clave, valor] of Object.entries(cambios)) {
+      cuerpo.append(clave, typeof valor === 'boolean' ? String(valor) : valor);
+    }
+    try {
+      const datos = await (await fetch('/api/consentimiento/preferencias', {
+        method: 'POST', body: cuerpo,
+      })).json();
+      if (!datos.ok) throw new Error(datos.error || 'no se pudo guardar');
+      await cargarPrivacidad();
+      el.estadoPrivacidad.className = 'estado ok';
+      el.estadoPrivacidad.textContent = 'Preferencias guardadas.';
+    } catch (error) {
+      el.estadoPrivacidad.className = 'estado error';
+      el.estadoPrivacidad.textContent = `Error: ${error.message}`;
+      await cargarPrivacidad();
+    }
+  }
+
+  async function decidirSolicitud(solicitudId, aceptar) {
+    const cuerpo = new FormData();
+    cuerpo.append('aceptar', aceptar ? 'true' : 'false');
+    try {
+      const datos = await (await fetch(
+        `/api/consentimiento/solicitudes/${solicitudId}/decidir`,
+        { method: 'POST', body: cuerpo },
+      )).json();
+      if (!datos.ok) throw new Error(datos.error || 'no se pudo registrar');
+      await cargarPrivacidad();
+      el.estadoPrivacidad.className = 'estado ok';
+      el.estadoPrivacidad.textContent = aceptar
+        ? 'Solicitud autorizada.'
+        : 'Solicitud declinada. No se entregará nada.';
+    } catch (error) {
+      el.estadoPrivacidad.className = 'estado error';
+      el.estadoPrivacidad.textContent = `Error: ${error.message}`;
+    }
+  }
+
+  async function crearSolicitud() {
+    const solicitante = el.inpSolicitante.value.trim();
+    if (!solicitante) {
+      el.estadoPrivacidad.className = 'estado error';
+      el.estadoPrivacidad.textContent = 'Indica quién solicita los datos.';
+      return;
+    }
+    const cuerpo = new FormData();
+    cuerpo.append('solicitante', solicitante);
+    cuerpo.append('motivo', el.inpMotivo.value.trim());
+    try {
+      const datos = await (await fetch('/api/consentimiento/solicitudes', {
+        method: 'POST', body: cuerpo,
+      })).json();
+      if (!datos.ok) throw new Error(datos.error || 'no se pudo registrar');
+      el.inpSolicitante.value = '';
+      el.inpMotivo.value = '';
+      await cargarPrivacidad();
+    } catch (error) {
+      el.estadoPrivacidad.className = 'estado error';
+      el.estadoPrivacidad.textContent = `Error: ${error.message}`;
+    }
+  }
+
+  // ======================================================================
   // Borrado de documentos
   // ======================================================================
 
@@ -991,6 +1253,7 @@
 
   async function cargarUsuario() {
     await cargarPerfiles();
+    cargarPrivacidad();
     if (estado.creandoPerfil) return; // no pisar el formulario a medio llenar
     try {
       const usuario = (await (await fetch('/api/usuario')).json()).usuario;
@@ -1944,6 +2207,16 @@
       irA(irBoton.dataset.ir);
       return;
     }
+    const declinar = evento.target.closest('[data-declinar]');
+    if (declinar) {
+      decidirSolicitud(declinar.dataset.declinar, false);
+      return;
+    }
+    const autorizar = evento.target.closest('[data-autorizar]');
+    if (autorizar) {
+      decidirSolicitud(autorizar.dataset.autorizar, true);
+      return;
+    }
     const borrarPulsado = evento.target.closest('[data-borrar]');
     if (borrarPulsado) {
       evento.stopPropagation();
@@ -1994,6 +2267,27 @@
       `${icono('borrar')} Toca de nuevo para eliminar`,
     );
   });
+  // --- Terminos y privacidad ---
+  el.chkAcepto.addEventListener('change', () => {
+    el.btnAceptarTerminos.disabled = !el.chkAcepto.checked;
+  });
+  el.btnAceptarTerminos.addEventListener('click', aceptarTerminos);
+  el.chkCompartir.addEventListener('change', () =>
+    guardarPreferencias({
+      compartir_red_medica: el.chkCompartir.checked,
+      // Apagar compartir apaga tambien la migracion: dejarla encendida sin
+      // comparticion es un estado que no significa nada.
+      ...(el.chkCompartir.checked ? {} : { migracion_automatica: false }),
+    }),
+  );
+  el.chkMigracion.addEventListener('change', () =>
+    guardarPreferencias({ migracion_automatica: el.chkMigracion.checked }),
+  );
+  el.selPostMortem.addEventListener('change', () =>
+    guardarPreferencias({ directiva_post_mortem: el.selPostMortem.value }),
+  );
+  el.btnCrearSolicitud.addEventListener('click', crearSolicitud);
+
   el.btnNuevoPerfil.addEventListener('click', entrarEnCreacion);
   el.btnCancelarPerfil.addEventListener('click', () => {
     salirDeCreacion();
@@ -2049,10 +2343,14 @@
   });
 
   cargarConfig()
-    .then(() => {
+    .then(async () => {
       cargarInicio();
-      // Si no hay usuario local, se lleva ahí primero: sin eso no entra nada a
-      // la base de datos y conviene resolverlo antes de escanear.
+      // Los términos van primero: hasta aceptarlos la app queda cubierta y no se
+      // puede navegar a ninguna vista.
+      const aceptados = await comprobarTerminos();
+      if (!aceptados) return;
+      // Si no hay usuario local, se lleva ahí: sin eso no entra nada a la base de
+      // datos y conviene resolverlo antes de escanear.
       if (estado.config && !estado.config.usuario_configurado) irA('usuario');
     })
     .catch(() => {

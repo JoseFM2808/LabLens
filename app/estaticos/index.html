@@ -129,6 +129,53 @@
     </button>
   </header>
 
+  <!-- Puerta de terminos: se muestra sobre todo lo demas hasta que se aceptan.
+       No es una vista mas de la barra inferior a proposito: mientras esta, no se
+       puede navegar a otra parte. -->
+  <div id="puerta-terminos" class="puerta oculto">
+    <div class="puerta-caja">
+      <h1 class="headline-lg">Términos y condiciones</h1>
+      <p class="label-sm suave" id="version-terminos"></p>
+      <div id="texto-terminos" class="texto-legal"></div>
+
+      <div class="seccion" style="margin-top: 20px">
+        <h2 class="headline-sm">Tus decisiones</h2>
+        <p class="body-md suave">
+          Todo empieza apagado. Puedes cambiarlo después desde tu perfil.
+        </p>
+        <label class="interruptor-fila">
+          <input type="checkbox" id="chk-compartir-inicial" />
+          <span>
+            <strong>Compartir mis datos con una red médica</strong>
+            <small>Si una red los solicita, se te avisa y tienes 15 días para
+            declinar antes de cualquier entrega.</small>
+          </span>
+        </label>
+        <label class="interruptor-fila">
+          <input type="checkbox" id="chk-migracion-inicial" />
+          <span>
+            <strong>Permitir migración automática</strong>
+            <small>Sin esto, ninguna solicitud avanza sola: cada una necesita que
+            la autorices de forma expresa.</small>
+          </span>
+        </label>
+        <label class="campo"><span>Si dejo de usar la app por 5 años</span>
+          <select id="sel-post-mortem-inicial">
+            <option value="revocar">Revocar: dejar de compartir mis datos</option>
+            <option value="mantener">Mantener: no revertir la compartición</option>
+          </select>
+        </label>
+      </div>
+
+      <label class="interruptor-fila" style="margin-top: 16px">
+        <input type="checkbox" id="chk-acepto" />
+        <span><strong>He leído y acepto los términos y condiciones</strong></span>
+      </label>
+      <button id="btn-aceptar-terminos" class="btn btn-primario" disabled>Continuar</button>
+      <p id="estado-terminos" class="estado"></p>
+    </div>
+  </div>
+
   <main id="contenido">
 
     <!-- ================= INICIO ================= -->
@@ -392,6 +439,54 @@
         <button id="btn-cancelar-perfil" class="btn btn-crema oculto">Cancelar</button>
       </div>
       <p id="estado-usuario" class="estado"></p>
+      </div>
+
+      <div class="seccion">
+        <h2 class="headline-sm">Privacidad y compartición</h2>
+
+        <label class="interruptor-fila">
+          <input type="checkbox" id="chk-compartir" />
+          <span>
+            <strong>Compartir mis datos con una red médica</strong>
+            <small id="nota-compartir">Desactivado. Nadie recibe tus datos.</small>
+          </span>
+        </label>
+
+        <label class="interruptor-fila">
+          <input type="checkbox" id="chk-migracion" />
+          <span>
+            <strong>Migración automática</strong>
+            <small>Si está apagada, cada solicitud necesita tu autorización expresa
+            aunque venza el plazo de aviso.</small>
+          </span>
+        </label>
+
+        <label class="campo"><span>Directiva post mortem (5 años sin actividad)</span>
+          <select id="sel-post-mortem">
+            <option value="revocar">Revocar: dejar de compartir mis datos</option>
+            <option value="mantener">Mantener: no revertir la compartición</option>
+          </select>
+        </label>
+
+        <div class="tarjeta" id="tarjeta-inactividad"></div>
+        <p id="estado-privacidad" class="estado"></p>
+      </div>
+
+      <div class="seccion">
+        <h2 class="headline-sm">Solicitudes de datos</h2>
+        <div id="lista-solicitudes" class="lista"></div>
+        <details id="simulador-solicitud">
+          <summary>Registrar una solicitud (para probar el flujo)</summary>
+          <div class="rejilla-campos" style="margin-top: 12px">
+            <label class="campo"><span>Quién solicita</span>
+              <input type="text" id="inp-solicitante" placeholder="Ej. Red Médica San Pablo" /></label>
+            <label class="campo"><span>Motivo (opcional)</span>
+              <input type="text" id="inp-motivo" placeholder="Ej. Continuidad de atención" /></label>
+          </div>
+          <button id="btn-crear-solicitud" class="btn btn-crema" style="margin-top: 12px">
+            Registrar solicitud
+          </button>
+        </details>
       </div>
 
       <dl id="meta-sistema" class="meta"></dl>

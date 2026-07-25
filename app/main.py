@@ -18,6 +18,7 @@ from . import (
     asistente,
     basedatos,
     comparativa,
+    consentimiento,
     conversaciones,
     detector,
     enderezar,
@@ -39,6 +40,8 @@ repositorio.asegurar_directorios()
 basedatos.inicializar()
 # Agrega la columna `etiqueta` de los perfiles si falta. Idempotente.
 perfiles.asegurar_esquema()
+# Tablas de consentimiento, solicitudes y bitacora. Idempotente.
+consentimiento.asegurar_esquema()
 
 app = FastAPI(title="LabLens", version=__version__)
 
@@ -114,6 +117,98 @@ def api_usuario_guardar(
     except ValueError as error:
         return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
     return JSONResponse({"ok": True, "usuario": usuario})
+
+
+@app.get("/api/terminos")
+def api_terminos() -> dict:
+    """Texto y version de los terminos, y si el perfil activo ya los acepto."""
+    return {
+        "version": consentimiento.VERSION_TERMINOS,
+        "texto": consentimiento.TEXTO_TERMINOS,
+        "dias_de_aviso": consentimiento.DIAS_DE_AVISO,
+        "anios_inactividad": consentimiento.ANIOS_INACTIVIDAD,
+        "aceptados": consentimiento.terminos_aceptados(),
+    }
+
+
+@app.post("/api/terminos/aceptar")
+def api_terminos_aceptar(
+    compartir_red_medica: bool = Form(False),
+    migracion_automatica: bool = Form(False),
+    directiva_post_mortem: str = Form("revocar"),
+) -> JSONResponse:
+    """Registra la aceptacion de los terminos y las preferencias iniciales.
+
+    Las tres preferencias arrancan apagadas / conservadoras: compartir es una
+    decision que se toma, no un valor por defecto que se hereda.
+    """
+    try:
+        consentimiento.aceptar_terminos(
+            compartir_red_medica=compartir_red_medica,
+            migracion_automatica=migracion_automatica,
+            directiva_post_mortem=directiva_post_mortem.strip(),
+        )
+    except ValueError as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
+    return JSONResponse({"ok": True, "estado": consentimiento.estado()})
+
+
+@app.get("/api/consentimiento")
+def api_consentimiento() -> dict:
+    """Estado completo: terminos, preferencias, solicitudes e inactividad.
+
+    Antes de responder cierra los avisos vencidos y aplica la directiva post
+    mortem si corresponde, asi que lo que se ve es el estado real.
+    """
+    return consentimiento.estado()
+
+
+@app.post("/api/consentimiento/preferencias")
+def api_consentimiento_preferencias(
+    compartir_red_medica: bool | None = Form(None),
+    migracion_automatica: bool | None = Form(None),
+    directiva_post_mortem: str | None = Form(None),
+) -> JSONResponse:
+    """Cambia las preferencias de comparticion. Solo toca lo que se envia."""
+    try:
+        consentimiento.actualizar_preferencias(
+            compartir_red_medica=compartir_red_medica,
+            migracion_automatica=migracion_automatica,
+            directiva_post_mortem=(directiva_post_mortem or "").strip() or None,
+        )
+    except ValueError as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
+    return JSONResponse({"ok": True, "estado": consentimiento.estado()})
+
+
+@app.post("/api/consentimiento/solicitudes")
+def api_solicitud_crear(
+    solicitante: str = Form(...),
+    motivo: str = Form(""),
+    alcance: str = Form(""),
+) -> JSONResponse:
+    """Registra que una red medica pidio los datos y abre el aviso de 15 dias.
+
+    No comparte nada: solo empieza a contar el plazo durante el cual la persona
+    puede declinar.
+    """
+    try:
+        solicitud = consentimiento.crear_solicitud(solicitante, motivo, alcance)
+    except ValueError as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
+    return JSONResponse({"ok": True, "solicitud": solicitud})
+
+
+@app.post("/api/consentimiento/solicitudes/{solicitud_id}/decidir")
+def api_solicitud_decidir(
+    solicitud_id: str, aceptar: bool = Form(...), nota: str = Form("")
+) -> JSONResponse:
+    """La persona declina o autoriza una solicitud dentro del plazo de aviso."""
+    try:
+        solicitud = consentimiento.decidir_solicitud(solicitud_id, aceptar, nota)
+    except ValueError as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
+    return JSONResponse({"ok": True, "solicitud": solicitud})
 
 
 @app.get("/api/perfiles")

@@ -222,6 +222,33 @@ def _ajuste_altitud(conexion, biomarcador_id: int, altitud: int | None) -> dict 
     }
 
 
+def conciliar_escala(valor: float | None, referencia: dict | None) -> tuple[float | None, bool]:
+    """Ajusta el valor cuando viene en otra escala que la del rango.
+
+    Caso real: la densidad urinaria se imprime como ``1.030`` o como ``1030``
+    segun el laboratorio, y el catalogo la guarda en la convencion x1000
+    (rango 1016 a 1022). Sin conciliar, el mismo resultado daba "dentro" leido de
+    una forma y un disparate leido de la otra.
+
+    La regla es deliberadamente estrecha: solo se corrige cuando el valor esta
+    exactamente mil veces por debajo del rango. No se hace nada parecido a
+    "acercar" un valor a su rango, que seria inventar el resultado.
+
+    Devuelve ``(valor, se_ajusto)``.
+    """
+    if valor is None or referencia is None:
+        return valor, False
+    minimo, maximo = referencia.get("min"), referencia.get("max")
+    if minimo is None or maximo is None or valor == 0:
+        return valor, False
+    if minimo <= valor <= maximo:
+        return valor, False
+    escalado = valor * 1000
+    if minimo <= escalado <= maximo:
+        return escalado, True
+    return valor, False
+
+
 def _estado(valor: float | None, referencia: dict | None) -> str:
     if referencia is None:
         return "sin_referencia"
@@ -397,10 +424,18 @@ def analisis_usuario(usuario_id: str = ID_USUARIO_LOCAL) -> dict:
             # valor medido no se pisa nunca, se guarda al lado en `evaluado`.
             ajuste = _ajuste_altitud(conexion, entrada["id"], altitud)
             factor = ajuste["factor"] if ajuste else 0.0
+            reescalados = 0
             for medicion in entrada["historial"]:
-                medicion["evaluado"] = (
-                    None if medicion["valor"] is None else round(medicion["valor"] - factor, 2)
-                )
+                if medicion["valor"] is None:
+                    medicion["evaluado"] = None
+                    continue
+                # Antes de restar el ajuste hay que tener el valor en la misma
+                # escala que el rango: la densidad urinaria llega como 1.030 o
+                # como 1030 segun el laboratorio.
+                base, se_reescalo = conciliar_escala(medicion["valor"], referencia)
+                medicion["evaluado"] = round(base - factor, 2)
+                medicion["reescalado"] = se_reescalo
+                reescalados += 1 if se_reescalo else 0
             ultimo = entrada["historial"][-1]
             biomarcadores.append(
                 {
@@ -467,6 +502,7 @@ def analisis_usuario(usuario_id: str = ID_USUARIO_LOCAL) -> dict:
         "usuario": {
             "edad": edad,
             "sexo": sexo,
+            "condicion": condicion,
             "distrito": usuario["distrito_residencia"],
             "clave_distrito": clave_distrito,
             "altitud_msnm": altitud,

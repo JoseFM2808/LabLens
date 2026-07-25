@@ -758,8 +758,10 @@ calzaron quedan con `matriz = 'sin_clasificar'` y el script los lista.
 ### `herramientas/sembrar_usuario_demo.py`
 
 `usuario-relleno`: mujer de 32 años, no gestante, residente en Chaupimarca (Cerro
-de Pasco, 4 373 msnm) desde 2025-09-01. Tres documentos: dos laboratorios
-separados cuatro meses y un control de signos vitales. 49 valores.
+de Pasco, 4 373 msnm) desde 2025-09-01. Cuatro documentos: dos laboratorios
+separados cuatro meses, una ecografía pélvica y un control de signos vitales.
+52 valores en 6 estudios, que tocan hematología, bioquímica, ginecología,
+signos vitales y antropometría.
 
 ```
 Hemoglobina 13.8 g/dl (marzo) -> 10.9 -> anemia MODERADA
@@ -855,3 +857,21 @@ usuario local (Callao, 27 msnm) ........... estado_ajuste = sin_ajuste
 - Los 46 rangos `POR_DEFINIR` siguen sin organismo: no se pueden citar y no
   deberían entrar a ningún índice ponderado.
 - `peso_ponderacion` sigue vacía. Es correcto: sin cita, el peso no entra.
+- **Endometrio: la ventana de 14 a 15 mm no dice nada.** La corrección N.13 de la
+  base validada separó "rango normal" de "umbral de alerta", que es lo correcto,
+  pero quedaron `rango_referencia` 1-14 mm y `umbral_alerta > 15 mm`. Probado
+  contra la base cargada:
+
+  ```
+   14.0 mm -> rango normal, sin alerta
+   14.5 mm -> NINGÚN rango, sin alerta
+   15.0 mm -> NINGÚN rango, sin alerta
+   16.0 mm -> NINGÚN rango, con alerta
+  ```
+
+  El documento de la base dice explícitamente "14.5 es normal", pero con estos
+  datos la app responde "sin referencia", no "normal". Lo mismo pasa con volumen
+  ovárico (normal 2-15 cc, alerta > 15 cc: ahí no hay hueco, pero 15.5 tampoco
+  tiene rango). Hay que decidir en la base validada si el `valor_max` del rango
+  normal sube a 15 o si se declara que entre 14 y 15 no hay afirmación. **No se
+  tocó el dato**: es una decisión de quien lo validó, no del cargador.

@@ -10,8 +10,9 @@ curado por nombre y unidad, y el distrito tiene que existir en el padron.
 Que se siembra y por que
 ------------------------
 Una mujer de 32 anios, no gestante, que vive en **Chaupimarca (Cerro de Pasco),
-4 373 msnm**, con tres documentos: dos analisis de laboratorio separados cuatro
-meses y un control de signos vitales.
+4 373 msnm**, con cuatro documentos: dos analisis de laboratorio separados cuatro
+meses, una ecografia pelvica y un control de signos vitales. Entre los cuatro
+tocan las seis categorias del catalogo curado que se pueden medir.
 
 El caso esta elegido para que se vea el ajuste por altitud de la NTS 213:
 
@@ -118,6 +119,16 @@ BIOQUIMICA_JULIO = [
     ("Ferritina Sérica", "sangre", 24.0),     # ya dentro
 ]
 
+ECOGRAFIA = [
+    # Rango normal 1-14 mm. Ojo: `umbral_alerta` dispara a partir de 15 mm, asi
+    # que entre 14 y 15 la base no afirma nada (ver el pendiente en HISTORY.md).
+    # Este valor esta comodamente dentro para que la demo no dependa de ese hueco.
+    ("Espesor del Endometrio", "imagen", 8.5),
+    ("Útero (Longitud)", "imagen", 72.0),
+    ("Útero (Ancho)", "imagen", 44.0),
+    # Volumen Ovarico no se siembra: es derivado = 1, se calcula de los diametros.
+]
+
 SIGNOS_VITALES = [
     ("Presión Sistólica", "clinico", 128.0),  # dispara umbral_alerta (>= 120)
     ("Presión Diastólica", "clinico", 82.0),  # dispara umbral_alerta (>= 80)
@@ -154,6 +165,17 @@ DOCUMENTOS = [
         "estudios": [
             ("hematologia", "Hemograma completo", HEMOGRAMA_JULIO),
             ("bioquimica", "Perfil bioquimico y ferritina", BIOQUIMICA_JULIO),
+        ],
+    },
+    {
+        "id": f"{PREFIJO_DOCUMENTO}ecografia-2026-07-19",
+        "tipo": "imagenologia",
+        "fuente_obtencion": "foto",
+        "institucion": 'LABORATORIO CLÍNICO "MÁS SALUD"',
+        "fecha_documento": "2026-07-19",
+        "archivo": "relleno/2026-07-19_ecografia.jpg",
+        "estudios": [
+            ("ginecologia", "Ecografia pelvica transvaginal", ECOGRAFIA),
         ],
     },
     {

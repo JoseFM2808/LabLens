@@ -7,14 +7,15 @@ import json
 import traceback
 from datetime import datetime
 
-from fastapi import FastAPI, File, Form, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import Body, FastAPI, File, Form, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import (
     __version__,
     almacenamiento,
     analisis,
+    asistente,
     basedatos,
     comparativa,
     detector,
@@ -54,6 +55,12 @@ def config() -> dict:
         "extraccion": {
             "activa": extraccion.esta_configurada(),
             "modelo": extraccion.modelo() if extraccion.esta_configurada() else None,
+        },
+        # El asistente usa la misma clave que la extraccion: no hay una segunda
+        # credencial que configurar.
+        "asistente": {
+            "activo": asistente.esta_configurado(),
+            "modelo": asistente.modelo() if asistente.esta_configurado() else None,
         },
         "usuario_configurado": repositorio.usuario_local() is not None,
         "sexos": list(repositorio.SEXOS_VALIDOS),
@@ -102,6 +109,63 @@ def api_usuario_guardar(
     except ValueError as error:
         return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
     return JSONResponse({"ok": True, "usuario": usuario})
+
+
+@app.post("/api/chat")
+def api_chat(cuerpo: dict = Body(...)) -> JSONResponse:
+    """Asistente: explica lo que ya esta en la base. Misma clave que la extraccion.
+
+    Cuerpo JSON: ``{"mensaje": "...", "historial": [{"quien": "usuario", "texto": "..."}]}``
+
+    El modelo **no consulta la base**: el servidor arma el contexto con SQL y se lo
+    entrega como datos. Es la regla 2 del documento de diseno, y aqui se cumple.
+
+    Nunca devuelve 500: si el servicio falla, viaja el estado (`sin_clave`,
+    `error_api`, `error_red`) y la interfaz lo muestra como mensaje.
+    """
+    mensaje = str(cuerpo.get("mensaje") or "").strip()
+    historial = cuerpo.get("historial") or []
+    if not isinstance(historial, list):
+        historial = []
+
+    resultado = asistente.responder(mensaje, historial)
+    return JSONResponse({"ok": resultado["estado"] == "ok", **resultado})
+
+
+@app.post("/api/chat/flujo")
+def api_chat_flujo(cuerpo: dict = Body(...)) -> StreamingResponse:
+    """Igual que `/api/chat`, pero devuelve la respuesta en flujo (SSE).
+
+    Es la ruta que usa la interfaz. El servicio tarda entre 4 y 44 segundos en una
+    respuesta completa; en flujo la primera frase aparece en un par de segundos.
+
+    Cada evento es una linea ``data: {json}``. `tipo` puede ser `trozo` (texto
+    parcial), `fin` (con el tiempo y el modelo) o `error`.
+    """
+    mensaje = str(cuerpo.get("mensaje") or "").strip()
+    historial = cuerpo.get("historial") or []
+    if not isinstance(historial, list):
+        historial = []
+
+    def eventos():
+        for evento in asistente.responder_en_flujo(mensaje, historial):
+            yield f"data: {json.dumps(evento, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        eventos(),
+        media_type="text/event-stream",
+        # Sin buffer intermedio: si un proxy acumula, el flujo pierde el sentido.
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.get("/api/chat/contexto")
+def api_chat_contexto() -> dict:
+    """El contexto exacto que se le manda al modelo. Para auditar que no invente.
+
+    No llama al servicio ni gasta tokens: solo devuelve lo que la app sabe.
+    """
+    return {"contexto": asistente.contexto()}
 
 
 @app.get("/api/distritos")

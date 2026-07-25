@@ -173,6 +173,7 @@
     if (nombre === 'documentos') cargarDocumentos();
     if (nombre === 'analisis') cargarAnalisis();
     if (nombre === 'usuario') cargarUsuario();
+    if (nombre === 'asistente') abrirAsistente();
     if (nombre === 'escanear' && estado.flujo) reanudarCamara();
   }
 
@@ -1496,19 +1497,91 @@
   }
 
   // ======================================================================
-  // Asistente (pendiente de conectar)
+  // Asistente
   // ======================================================================
 
-  function enviarChat() {
+  // El servidor no guarda la conversación: el historial vive aquí y se reenvía
+  // con cada pregunta. Al recargar la página, empieza de cero.
+  const conversacion = [];
+
+  const ERRORES_CHAT = {
+    sin_clave:
+      'El asistente usa la misma clave que la extracción y no está configurada. ' +
+      'Mientras tanto, tus valores están en Análisis y el historial en Documentos.',
+    error_red: 'No se pudo llegar al servicio. Revisa la conexión e inténtalo de nuevo.',
+    error_api: 'El servicio respondió con un error. Inténtalo de nuevo en un momento.',
+    error_respuesta: 'El servicio respondió algo que no se pudo leer. Inténtalo de nuevo.',
+    sin_pregunta: 'Escribe una pregunta.',
+  };
+
+  async function enviarChat() {
     const texto = el.chatEntrada.value.trim();
-    if (!texto) return;
+    if (!texto || estado.chatEnCurso) return;
+
     agregarMensaje(texto, 'usuario');
+    conversacion.push({ quien: 'usuario', texto });
     el.chatEntrada.value = '';
-    agregarMensaje(
-      'El asistente todavía no está conectado. Mientras tanto, tus valores están en ' +
-        'Análisis y el historial completo en Documentos.',
-      'asistente',
-    );
+
+    estado.chatEnCurso = true;
+    el.btnEnviarChat.disabled = true;
+    // Una sola burbuja: primero dice que está leyendo y después se va llenando
+    // con la respuesta a medida que llega. El servicio tarda entre 4 y 44 s.
+    const burbuja = agregarMensaje('Revisando tus documentos...', 'asistente');
+    const parrafo = burbuja.querySelector('p');
+    let acumulado = '';
+
+    try {
+      const respuesta = await fetch('/api/chat/flujo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // El historial va sin el turno que se acaba de agregar: ese viaja en `mensaje`.
+        body: JSON.stringify({ mensaje: texto, historial: conversacion.slice(0, -1) }),
+      });
+      if (!respuesta.ok || !respuesta.body) throw new Error('sin flujo');
+
+      const lector = respuesta.body.getReader();
+      const decodificador = new TextDecoder();
+      let pendiente = '';
+
+      for (;;) {
+        const { done, value } = await lector.read();
+        if (done) break;
+        pendiente += decodificador.decode(value, { stream: true });
+
+        // Los eventos SSE van separados por línea en blanco; el último trozo
+        // puede quedar cortado, así que se guarda para la siguiente vuelta.
+        const eventos = pendiente.split('\n\n');
+        pendiente = eventos.pop() || '';
+
+        for (const evento of eventos) {
+          const linea = evento.split('\n').find((l) => l.startsWith('data:'));
+          if (!linea) continue;
+          let dato;
+          try {
+            dato = JSON.parse(linea.slice(5));
+          } catch (error) {
+            continue;
+          }
+          if (dato.tipo === 'trozo') {
+            acumulado += dato.texto;
+            parrafo.textContent = acumulado;
+            burbuja.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          } else if (dato.tipo === 'error') {
+            acumulado = dato.mensaje || ERRORES_CHAT[dato.estado] || 'No se pudo responder.';
+            parrafo.textContent = acumulado;
+          }
+        }
+      }
+
+      if (acumulado) conversacion.push({ quien: 'asistente', texto: acumulado });
+      else parrafo.textContent = 'No se pudo responder. Inténtalo de nuevo.';
+    } catch (error) {
+      parrafo.textContent = ERRORES_CHAT.error_red;
+    } finally {
+      estado.chatEnCurso = false;
+      el.btnEnviarChat.disabled = false;
+      el.chatEntrada.focus();
+    }
   }
 
   function agregarMensaje(texto, quien) {
@@ -1517,9 +1590,25 @@
     burbuja.className = propio ? 'tarjeta' : 'tarjeta-crema';
     burbuja.style.maxWidth = '85%';
     burbuja.style.alignSelf = propio ? 'flex-end' : 'flex-start';
-    burbuja.innerHTML = `<p class="body-md">${escapar(texto)}</p>`;
+    // Las respuestas llegan con saltos de línea: se respetan sin permitir HTML.
+    burbuja.innerHTML = `<p class="body-md" style="white-space: pre-wrap">${escapar(texto)}</p>`;
     el.chatMensajes.appendChild(burbuja);
     burbuja.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    return burbuja;
+  }
+
+  // Saludo al entrar por primera vez: dice de qué puede hablar y de qué no.
+  function abrirAsistente() {
+    if (el.chatMensajes.childElementCount > 0) return;
+    const activo = estado.config?.asistente?.activo;
+    agregarMensaje(
+      activo
+        ? 'Puedo explicarte los valores de tus documentos: qué significa cada uno, ' +
+            'cuál está fuera de rango y de qué norma sale ese rango. No doy ' +
+            'diagnósticos ni tratamientos.'
+        : ERRORES_CHAT.sin_clave,
+      'asistente',
+    );
   }
 
   // ======================================================================

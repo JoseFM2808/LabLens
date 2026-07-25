@@ -223,7 +223,8 @@ Ver el estado en `GET /api/basedatos`, que separa `activas` (dominio del usuario
 ```
 
 Crea `usuario-relleno`: mujer de 32 anios, no gestante, residente en Chaupimarca
-(Cerro de Pasco, 4 373 msnm), con tres documentos y 49 valores. Sirve para ver el
+(Cerro de Pasco, 4 373 msnm), con cuatro documentos (dos laboratorios, una
+ecografia pelvica y un control de signos vitales) y 52 valores. Sirve para ver el
 ajuste por altitud sin tener que escanear nada:
 
 ```

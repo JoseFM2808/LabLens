@@ -44,7 +44,7 @@ import json
 import uuid
 from pathlib import Path
 
-from . import basedatos, referencia
+from . import basedatos, catalogo, referencia
 from .almacenamiento import DIR_CAPTURAS
 from .esquema import Informe, clave_biomarcador, distrito_probable
 
@@ -66,6 +66,13 @@ SEXOS_LEGADO = {"femenino": "F", "masculino": "M"}
 # Condiciones de `rango_referencia.condicion` que aplican a una persona adulta.
 # 'general' es el valor por defecto y nunca se asume otro: decir "no gestante" es
 # una afirmacion clinica que solo la usuaria puede hacer.
+# Nombre legible del estudio segun la matriz deducida del documento.
+CATEGORIA_ESTUDIO = {
+    "orina": "Examen completo de orina",
+    "sangre": "Analisis de sangre",
+    "clinico": "Control clinico",
+}
+
 CONDICIONES_VALIDAS = (
     "general",
     "no_gestante",
@@ -174,7 +181,9 @@ def guardar_usuario(
 # Biomarcadores (Dominio 3, poblado sobre la marcha por necesidad de la FK)
 # ==========================================================================
 
-def resolver_biomarcador(conexion, nombre: str, unidad: str | None) -> int:
+def resolver_biomarcador(
+    conexion, nombre: str, unidad: str | None, matriz: str | None = None
+) -> int:
     """Devuelve el id del biomarcador, creandolo si no existe.
 
     Tres intentos, en este orden:
@@ -194,7 +203,7 @@ def resolver_biomarcador(conexion, nombre: str, unidad: str | None) -> int:
     sin unidad: son dos analitos distintos y engancharlos haria que la orina se
     evalue contra el rango de la sangre.
     """
-    curado = referencia.buscar_en_catalogo(conexion, nombre, unidad)
+    curado = referencia.buscar_en_catalogo(conexion, nombre, unidad, matriz)
     if curado:
         return int(curado["id"])
 
@@ -399,19 +408,32 @@ def _guardar_en_bd(informe: Informe) -> dict:
                     "mensaje": "Documento registrado sin valores: el modelo no devolvio resultados.",
                 }
 
+            # La matriz se deduce una vez, del conjunto de nombres del examen:
+            # con VOLUMEN / DENSIDAD / ASPECTO es orina, con HEMOGLOBINA /
+            # PLAQUETAS es sangre. Sirve para desempatar los nombres que existen
+            # en las dos (GLUCOSA, HEMATIES) cuando el valor no trae unidad.
+            matriz_documento = catalogo.inferir_matriz(
+                [r.biomarcador for r in informe.resultados]
+            )
+
             estudio_id = str(uuid.uuid4())
             conexion.execute(
                 """
                 INSERT INTO estudio (id, documento_id, categoria, nombre_estudio)
-                VALUES (?, ?, 'sin_clasificar', 'Analisis de laboratorio')
+                VALUES (?, ?, ?, ?)
                 """,
-                (estudio_id, informe.id),
+                (
+                    estudio_id,
+                    informe.id,
+                    matriz_documento or "sin_clasificar",
+                    CATEGORIA_ESTUDIO.get(matriz_documento, "Analisis de laboratorio"),
+                ),
             )
 
             antes = conexion.execute("SELECT COUNT(*) AS n FROM biomarcador").fetchone()["n"]
             for resultado in informe.resultados:
                 biomarcador_id = resolver_biomarcador(
-                    conexion, resultado.biomarcador, resultado.unidad
+                    conexion, resultado.biomarcador, resultado.unidad, matriz_documento
                 )
                 conexion.execute(
                     """

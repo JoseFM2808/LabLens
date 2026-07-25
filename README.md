@@ -69,10 +69,37 @@ agregar `http://<IP>:8000`, reiniciar el navegador y arrancar con
 ## Como usarlo
 
 1. Elegir el **formato** del documento: el marco punteado toma esa forma.
-2. Encuadrar el documento dentro del marco, sobre un fondo de color contrastado.
+   A4 y A5 comparten proporcion, asi que el mismo formato sirve para los dos.
+2. Encuadrar el documento **llenando** el marco, sobre un fondo contrastado.
 3. El contorno detectado se dibuja en vivo: **ambar** = falta ajustar,
    **verde** = alineado.
 4. Pulsar **Capturar**, o activar **Captura automatica al alinear**.
+
+El detector combina tres senales: los bordes de la imagen, el color (busca papel
+blanco: claro y sin saturacion) y las pistas que manda la camara (el marco guia y
+la proporcion del formato). Un objeto rectangular que no sea papel se descarta
+aunque sea mas grande que el documento.
+
+### Si no reconoce el documento
+
+Activar la casilla **Diagnostico** en la camara. Muestra:
+
+- los candidatos descartados en gris, con su puntaje y el motivo del rechazo;
+- un panel con los componentes del puntaje del ganador.
+
+El boton **Guardar cuadro para diagnostico** escribe tres archivos en
+`capturas/diagnostico/`: la foto original, la foto con los candidatos pintados y
+un JSON con el detalle de cada candidato. Sirve para afinar el detector con
+documentos reales.
+
+Motivos de rechazo posibles:
+
+| Motivo | Que significa |
+|---|---|
+| `area` | El documento ocupa menos del 15% del cuadro (muy lejos) o mas del 97% (se sale). |
+| `angulos` | El cuadrilatero esta muy deformado: mas de 40 grados entre la esquina mas abierta y la mas cerrada. |
+| `no_es_papel` | Menos del 65% del interior parece papel blanco. Es el filtro que evita confundir el documento con otro objeto. |
+| `papel_debil` | Parece papel pero con poco contraste contra el fondo. Cambiar a una superficie mas oscura. |
 
 Modos de realce:
 
@@ -89,11 +116,102 @@ capturas/
   registro.jsonl                                         una linea JSON por captura
 ```
 
-## Conectar el extractor de datos
+## Extraccion de datos
 
-LabLens entrega la foto plana y se detiene ahi. La extraccion de datos (OCR,
-API de laboratorio, modelo de vision) se conecta en un solo lugar:
-`app/integraciones.py`, funcion `procesar_documento(captura)`.
+Despues de cada captura, LabLens manda el documento plano a un modelo de vision y
+guarda los biomarcadores en la base de datos Qhali.
+
+### Activarla
+
+```powershell
+$env:LABLENS_NVIDIA_API_KEY = "tu-clave-del-NIM"
+.\.venv\Scripts\python.exe servidor.py
+```
+
+Sin la clave la app funciona igual: guarda las capturas y avisa que la extraccion
+esta desactivada. La clave **nunca** se escribe en un archivo del repositorio.
+
+| Variable | Por defecto | Para que |
+|---|---|---|
+| `LABLENS_NVIDIA_API_KEY` | - | Clave del NIM (tambien vale `NVIDIA_API_KEY`). |
+| `LABLENS_MODELO_VISION` | `google/gemma-4-31b-it` | Id del modelo. |
+| `LABLENS_NIM_URL` | endpoint de integrate.api.nvidia.com | Servicio a usar. |
+| `LABLENS_OCR_LADO_MAXIMO` | `1600` | Lado mayor en px que se envia. |
+| `LABLENS_TIEMPO_LIMITE` | `60` | Segundos por intento (3 intentos). |
+
+### Usuario local
+
+Antes de la primera captura hay que registrar el usuario en la pantalla de inicio.
+La base **no guarda nombres**: solo la fecha de nacimiento y el sexo, porque los
+rangos de referencia de la OMS dependen de la edad y del sexo, mas el distrito
+opcional.
+
+Sin usuario registrado la extraccion se hace igual, pero queda solo en el JSON de
+auditoria y no entra a la base.
+
+### Que pasa con cada captura
+
+1. Se endereza y realza el documento (esto ya existia).
+2. Se aplana la iluminacion para el OCR: se estima la luz con un desenfoque muy
+   grande y se divide la imagen por esa estimacion, lo que borra sombras y
+   vinetas. Solo se toca la luminancia, asi que los sellos de color se conservan.
+3. Se envia al modelo y se pide JSON. Hasta 3 intentos; un 4xx no se reintenta.
+4. Se normaliza el texto libre: `"12,5"` -> 12.5, `"< 0.01"` -> 0.01 con
+   comparador `<`, `"Hasta 200"` -> techo 200.
+5. **Se recalcula si el valor esta fuera de rango**, sin confiar en lo que dijo
+   el modelo. Lo que dijo el modelo se guarda aparte para poder medir su acierto.
+6. Se escribe el JSON de auditoria y despues la base de datos.
+
+El paso 3 tarda entre 5 y 30 segundos, asi que corre en segundo plano: la captura
+responde al instante y la pantalla de resultado se actualiza sola.
+
+## Base de datos
+
+Una sola SQLite local en `datos/qhali.sqlite3`, con el esquema de
+[qhali-estructura-base-datos.md](qhali-estructura-base-datos.md): 14 tablas en
+tres dominios logicos. Se crea sola al arrancar el servidor.
+
+**Lo que se llena hoy:**
+
+```
+usuario -> documento -> estudio -> valor_extraido >- biomarcador
+```
+
+**Lo que queda vacio a proposito** (pendiente de cargar): los rangos de
+referencia de la OMS/MINSA, el padron de establecimientos de RENIPRESS, los pesos
+de ponderacion y los umbrales de desviacion.
+
+Ver el estado en `GET /api/basedatos`.
+
+### Puntos a revisar del mapeo
+
+| Tema | Situacion |
+|---|---|
+| `biomarcador` | Se crea sobre la marcha porque `valor_extraido.biomarcador_id` es NOT NULL. Los del scanner quedan con `sistema_corporal = 'sin_clasificar'` para poder curarlos despues. |
+| Rango impreso en el papel | `valor_extraido` no tiene columna para el. Se conserva solo en el JSON de auditoria. Hay que decidir si se agrega. |
+| `confianza_extraccion` | Queda NULL: el servicio no devuelve confianza por valor. |
+| `institucion_id` | Queda NULL hasta que exista `establecimiento_salud`. El nombre crudo siempre se guarda. |
+| `estudio.categoria` | `'sin_clasificar'`: el prompt no pide la categoria del estudio. |
+| Paciente y fecha | El prompt no los extrae todavia. Las columnas ya existen como nulables. |
+
+```sql
+-- Los biomarcadores que faltan curar
+SELECT * FROM biomarcador WHERE sistema_corporal = 'sin_clasificar';
+
+-- Seguimiento de un biomarcador en el tiempo
+SELECT d.fecha_carga, v.valor_numerico, v.unidad
+FROM valor_extraido v
+JOIN estudio e   ON e.id = v.estudio_id
+JOIN documento d ON d.id = e.documento_id
+JOIN biomarcador b ON b.id = v.biomarcador_id
+WHERE b.nombre = 'Hemoglobina'
+ORDER BY d.fecha_carga;
+```
+
+## Conectar otro extractor de datos
+
+El gancho esta en `app/integraciones.py`, funcion `procesar_documento(captura)`.
+Hoy encola el motor propio; para usar otro extractor se reemplaza ese cuerpo.
 
 ```python
 def procesar_documento(captura: Captura) -> dict:

@@ -4,6 +4,11 @@ LabLens termina su trabajo cuando entrega la foto del documento ya plana y
 realzada. Lo que se hace con esa foto (OCR, API de laboratorio, modelo de
 lenguaje, historia clinica) se define en este archivo y en ningun otro.
 
+Estado actual: conectado al motor de extraccion propio (`app/extraccion.py`),
+que manda el documento a un modelo de vision y devuelve los biomarcadores
+normalizados. Para usar otro extractor, reemplazar el cuerpo de
+``procesar_documento``.
+
 Contrato
 --------
 La funcion ``procesar_documento(captura)`` se llama automaticamente despues de
@@ -74,18 +79,23 @@ class Captura:
 
 
 def procesar_documento(captura: Captura) -> dict:
-    """Gancho de integracion. Reemplazar el cuerpo por la logica real.
+    """Gancho de integracion. Conectado al motor de extraccion de LabLens.
 
-    Mientras no haya integracion configurada devuelve el estado
-    ``sin_integracion`` junto con la ruta del archivo, para que cualquier
-    proceso externo pueda tomarlo desde el disco.
+    Encola el analisis en segundo plano y devuelve el estado inicial. El modelo
+    tarda entre 5 y 30 segundos, asi que no se espera aqui: la captura responde
+    al instante y el frontend consulta ``/api/capturas/{id}/datos``.
+
+    El recorrido completo es:
+        analisis.encolar -> extraccion.extraer -> esquema.normalizar
+        -> repositorio.guardar
+
+    Si no hay clave configurada devuelve ``estado: "sin_clave"`` y la captura se
+    guarda igual. Para conectar otro extractor en lugar de este, reemplazar el
+    cuerpo de esta funcion; ver los ejemplos al final del archivo.
     """
-    return {
-        "estado": "sin_integracion",
-        "mensaje": "Editar app/integraciones.py para conectar el extractor de datos.",
-        "archivo": str(captura.ruta),
-        "url_imagen": f"/capturas/{captura.ruta.name}",
-    }
+    from . import analisis  # import diferido: analisis importa Captura de aqui
+
+    return analisis.encolar(captura)
 
 
 # ---------------------------------------------------------------------------

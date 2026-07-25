@@ -20,11 +20,13 @@ from .integraciones import Captura
 RAIZ = Path(__file__).resolve().parent.parent
 DIR_CAPTURAS = RAIZ / "capturas"
 DIR_ORIGINALES = DIR_CAPTURAS / "originales"
+DIR_DIAGNOSTICO = DIR_CAPTURAS / "diagnostico"
 REGISTRO = DIR_CAPTURAS / "registro.jsonl"
 
 
 def asegurar_directorios() -> None:
     DIR_ORIGINALES.mkdir(parents=True, exist_ok=True)
+    DIR_DIAGNOSTICO.mkdir(parents=True, exist_ok=True)
 
 
 def _nombre_archivo(momento: datetime, formato: str, sufijo: str) -> str:

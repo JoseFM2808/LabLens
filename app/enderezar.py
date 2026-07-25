@@ -100,6 +100,51 @@ def realzar(bgr: np.ndarray, modo: str = "color") -> np.ndarray:
     return cv2.cvtColor(binaria, cv2.COLOR_GRAY2BGR)
 
 
+def aplanar_iluminacion(bgr: np.ndarray) -> np.ndarray:
+    """Quita el degradado de luz para que el fondo del papel quede blanco parejo.
+
+    Correccion de campo plano: se estima la iluminacion con un desenfoque muy
+    grande y se divide la imagen por esa estimacion. Elimina sombras suaves y
+    vinetas, que es lo que mas confunde al OCR. Solo se toca la luminancia (canal
+    L), asi que los sellos y las firmas de color se conservan.
+
+    Es complementario al CLAHE de `realzar`: CLAHE trabaja el contraste local,
+    esto quita la variacion de baja frecuencia.
+    """
+    lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB)
+    canal_l, canal_a, canal_b = cv2.split(lab)
+
+    # El nucleo debe ser bastante mayor que el texto para no borrarlo.
+    lado = max(bgr.shape[:2])
+    radio = max(31, (lado // 8) | 1)  # impar
+    fondo = cv2.GaussianBlur(canal_l, (radio, radio), 0)
+    fondo = np.maximum(fondo, 1)
+    corregido = cv2.divide(canal_l, fondo, scale=235.0)
+
+    # Estiramiento suave de contraste, recortando colas.
+    bajo, alto = np.percentile(corregido, (2, 99))
+    if alto - bajo > 5:
+        corregido = np.clip((corregido.astype(np.float32) - bajo) * (255.0 / (alto - bajo)), 0, 255)
+    corregido = corregido.astype(np.uint8)
+
+    return cv2.cvtColor(cv2.merge((corregido, canal_a, canal_b)), cv2.COLOR_LAB2BGR)
+
+
+def preparar_para_ocr(bgr: np.ndarray, lado_maximo: int = 1600) -> np.ndarray:
+    """Deja el documento listo para el modelo de vision.
+
+    El documento ya llega enderezado y realzado, asi que aqui solo se aplana la
+    iluminacion y se reduce el tamano. No se vuelve a aplicar nitidez: hacerlo
+    dos veces genera halos alrededor de las letras y empeora la lectura.
+    """
+    limpio = aplanar_iluminacion(bgr)
+    lado = max(limpio.shape[:2])
+    if lado > lado_maximo:
+        escala = lado_maximo / lado
+        limpio = cv2.resize(limpio, None, fx=escala, fy=escala, interpolation=cv2.INTER_AREA)
+    return limpio
+
+
 def codificar_jpeg(bgr: np.ndarray, calidad: int = 92) -> bytes:
     ok, buffer = cv2.imencode(".jpg", bgr, [int(cv2.IMWRITE_JPEG_QUALITY), calidad])
     if not ok:

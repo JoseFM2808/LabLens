@@ -14,12 +14,25 @@
   const VIGENCIA_QUAD_MS = 600;    // despues de esto el servidor vuelve a detectar
   const TOLERANCIA_PROPORCION = 0.25; // distingue vertical de horizontal, no A4 de Carta
 
+  // --- Consulta del analisis en segundo plano -----------------------------
+  const INTERVALO_SONDEO_MS = 1500;
+  // 3 intentos x 120 s de tiempo limite + esperas = hasta ~6.5 min en el peor
+  // caso. Se observaron ReadTimeout reales contra el servicio, asi que la
+  // ventana tiene que cubrirlos o la pantalla mentiria diciendo que fallo.
+  const SONDEOS_MAXIMOS = 270;
+
   const $ = (id) => document.getElementById(id);
 
   const el = {
     inicio: $('pantalla-inicio'),
+    usuario: $('pantalla-usuario'),
     camara: $('pantalla-camara'),
     resultado: $('pantalla-resultado'),
+    inpNacimiento: $('inp-nacimiento'),
+    selSexo: $('sel-sexo'),
+    inpDistrito: $('inp-distrito'),
+    btnGuardarUsuario: $('btn-guardar-usuario'),
+    estadoUsuario: $('estado-usuario'),
     btnActivar: $('btn-activar'),
     btnCapturar: $('btn-capturar'),
     btnNueva: $('btn-nueva'),
@@ -34,9 +47,16 @@
     envoltorioCamaras: $('envoltorio-camaras'),
     chkAuto: $('chk-auto'),
     chkAjustar: $('chk-ajustar'),
+    chkDiagnostico: $('chk-diagnostico'),
+    panelDiagnostico: $('panel-diagnostico'),
+    btnDiagnostico: $('btn-diagnostico'),
     imgResultado: $('img-resultado'),
     metaResultado: $('meta-resultado'),
     jsonResultado: $('json-resultado'),
+    estadoAnalisis: $('estado-analisis'),
+    metaInforme: $('meta-informe'),
+    tablaEnvoltorio: $('tabla-envoltorio'),
+    cuerpoTabla: document.querySelector('#tabla-resultados tbody'),
     enlaceDescarga: $('enlace-descarga'),
   };
 
@@ -48,12 +68,17 @@
     enVuelo: false,
     ultimoEnvio: 0,
     deteccion: null,       // { quad, area, puntaje, momento }
+    candidatos: null,      // solo con diagnostico activo
+    configEnviada: null,   // ultima configuracion confirmada por el servidor
+    panelCongeladoHasta: 0, // deja leer el informe sin que el bucle lo sobreescriba
     quadPrevio: null,
     estables: 0,
     alineados: 0,
     alineado: false,
     capturando: false,
     activo: false,
+    capturaActual: null,   // id de la captura que se esta mostrando
+    sondeo: null,          // timeout de la consulta del analisis
     generacion: 0,         // evita que convivan dos bucles tras una captura
   };
 
@@ -73,6 +98,60 @@
       el.selFormato.appendChild(opcion);
     }
     el.selFormato.value = estado.config.formato_por_defecto;
+    prepararUsuario();
+  }
+
+  // --- Usuario local (obligatorio para escribir en la base de datos) -------
+  const ETIQUETAS_SEXO = {
+    femenino: 'Femenino',
+    masculino: 'Masculino',
+    otro: 'Otro',
+    no_especificado: 'Prefiero no indicarlo',
+  };
+
+  function prepararUsuario() {
+    if (el.selSexo.options.length === 0) {
+      for (const clave of estado.config.sexos || []) {
+        const opcion = document.createElement('option');
+        opcion.value = clave;
+        opcion.textContent = ETIQUETAS_SEXO[clave] || clave;
+        el.selSexo.appendChild(opcion);
+      }
+    }
+    // Solo se muestra el formulario si todavia no hay usuario registrado.
+    el.usuario.classList.toggle('oculto', estado.config.usuario_configurado === true);
+    if (!estado.config.usuario_configurado) {
+      el.estadoUsuario.className = 'estado-analisis';
+      el.estadoUsuario.textContent =
+        'Sin esto la extraccion se guarda en JSON pero no entra a la base de datos.';
+    }
+  }
+
+  async function guardarUsuario() {
+    if (!el.inpNacimiento.value) {
+      el.estadoUsuario.className = 'estado-analisis error';
+      el.estadoUsuario.textContent = 'Falta la fecha de nacimiento.';
+      return;
+    }
+    el.btnGuardarUsuario.disabled = true;
+    try {
+      const cuerpo = new FormData();
+      cuerpo.append('fecha_nacimiento', el.inpNacimiento.value);
+      cuerpo.append('sexo', el.selSexo.value);
+      cuerpo.append('distrito_residencia', el.inpDistrito.value.trim());
+      const respuesta = await fetch('/api/usuario', { method: 'POST', body: cuerpo });
+      const datos = await respuesta.json();
+      if (!datos.ok) throw new Error(datos.error || 'no se pudo guardar');
+      estado.config.usuario_configurado = true;
+      el.estadoUsuario.className = 'estado-analisis ok';
+      el.estadoUsuario.textContent = 'Usuario local guardado.';
+      setTimeout(() => el.usuario.classList.add('oculto'), 1200);
+    } catch (error) {
+      el.estadoUsuario.className = 'estado-analisis error';
+      el.estadoUsuario.textContent = `Error: ${error.message}`;
+    } finally {
+      el.btnGuardarUsuario.disabled = false;
+    }
   }
 
   function formatoActual() {
@@ -168,6 +247,35 @@
     };
   }
 
+  function guiaNormalizada() {
+    // El marco guia en coordenadas del video (0..1), que es lo que entiende el
+    // detector. Se le manda para que castigue a los candidatos de afuera.
+    const rect = rectContenido();
+    if (!rect.ancho || !rect.alto) return null;
+    const guia = rectGuia(rect);
+    return [
+      +((guia.x - rect.x) / rect.ancho).toFixed(4),
+      +((guia.y - rect.y) / rect.alto).toFixed(4),
+      +(guia.ancho / rect.ancho).toFixed(4),
+      +(guia.alto / rect.alto).toFixed(4),
+    ];
+  }
+
+  function enviarConfig(forzar = false) {
+    if (estado.ws?.readyState !== WebSocket.OPEN) return;
+    const guia = guiaNormalizada();
+    if (!guia) return;
+    const config = {
+      guia,
+      ratio: el.chkAjustar.checked ? formatoActual().ratio : 0,
+      candidatos: el.chkDiagnostico.checked,
+    };
+    const serializada = JSON.stringify(config);
+    if (!forzar && serializada === estado.configEnviada) return;
+    estado.configEnviada = serializada;
+    estado.ws.send(serializada);
+  }
+
   // --- Dibujo -------------------------------------------------------------
   function dibujar(generacion) {
     if (!estado.activo || generacion !== estado.generacion) return;
@@ -184,6 +292,10 @@
 
     const rect = rectContenido();
     dibujarGuia(ctx, rectGuia(rect));
+
+    if (el.chkDiagnostico.checked && estado.candidatos) {
+      dibujarCandidatos(ctx, estado.candidatos, rect);
+    }
 
     const deteccion = estado.deteccion;
     if (deteccion && Date.now() - deteccion.momento < 900) {
@@ -242,6 +354,68 @@
     ctx.restore();
   }
 
+  function dibujarCandidatos(ctx, candidatos, rect) {
+    // Los descartados se pintan en gris con su puntaje y el motivo del rechazo.
+    ctx.save();
+    ctx.font = '11px system-ui, sans-serif';
+    for (const candidato of candidatos) {
+      if (candidato.aceptado) continue;
+      const puntos = candidato.quad.map(([x, y]) => [
+        rect.x + x * rect.ancho,
+        rect.y + y * rect.alto,
+      ]);
+      ctx.beginPath();
+      ctx.moveTo(puntos[0][0], puntos[0][1]);
+      for (let i = 1; i < puntos.length; i += 1) ctx.lineTo(puntos[i][0], puntos[i][1]);
+      ctx.closePath();
+      ctx.strokeStyle = 'rgba(190, 190, 190, 0.75)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(230, 230, 230, 0.9)';
+      ctx.fillText(
+        `${candidato.puntaje.toFixed(2)} ${candidato.metodo} ${candidato.rechazo || ''}`,
+        puntos[0][0] + 4,
+        puntos[0][1] - 4,
+      );
+    }
+    ctx.restore();
+  }
+
+  function actualizarPanelDiagnostico(respuesta) {
+    if (!el.chkDiagnostico.checked) {
+      el.panelDiagnostico.classList.add('oculto');
+      return;
+    }
+    el.panelDiagnostico.classList.remove('oculto');
+    if (Date.now() < estado.panelCongeladoHasta) return;
+    if (!respuesta.encontrado) {
+      const descartados = (respuesta.candidatos || [])
+        .map((c) => `${c.puntaje.toFixed(2)} ${c.metodo} -> ${c.rechazo}`)
+        .join('\n');
+      el.panelDiagnostico.textContent = descartados
+        ? `Sin documento aceptado.\n${descartados}`
+        : 'Sin candidatos: no se hallo ningun cuadrilatero.';
+      return;
+    }
+    const componentes = Object.entries(respuesta.componentes || {})
+      .map(([clave, valor]) => `${clave} ${valor.toFixed(2)}`)
+      .join('  |  ');
+    const papel = respuesta.papel_detalle;
+    const lineas = [
+      `ganador: ${respuesta.metodo}  puntaje ${respuesta.puntaje.toFixed(3)}  area ${respuesta.area.toFixed(2)}`,
+      componentes,
+    ];
+    if (papel) {
+      lineas.push(
+        `papel: cobertura ${papel.cobertura.toFixed(2)}  contraste ${papel.contraste.toFixed(2)}  ` +
+          `V dentro ${papel.valor_dentro} / fuera ${papel.valor_fuera ?? '-'}  S ${papel.saturacion_dentro}`,
+      );
+    }
+    el.panelDiagnostico.textContent = lineas.join('\n');
+  }
+
   // --- WebSocket de deteccion --------------------------------------------
   function conectar() {
     const esquema = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -249,21 +423,29 @@
     ws.binaryType = 'arraybuffer';
     estado.ws = ws;
 
-    ws.onopen = () => marcarConexion('Deteccion activa', 'chip-ok');
+    ws.onopen = () => {
+      marcarConexion('Deteccion activa', 'chip-ok');
+      estado.configEnviada = null;
+      enviarConfig(true);
+    };
     ws.onclose = () => {
       marcarConexion('Reconectando...', 'chip-error');
       estado.enVuelo = false;
+      estado.configEnviada = null;
       if (estado.activo) setTimeout(conectar, 1200);
     };
     ws.onerror = () => marcarConexion('Error de conexion', 'chip-error');
     ws.onmessage = (evento) => {
-      estado.enVuelo = false;
       let respuesta;
       try {
         respuesta = JSON.parse(evento.data);
       } catch (error) {
+        estado.enVuelo = false;
         return;
       }
+      // La confirmacion de configuracion no consume el cuadro en vuelo.
+      if (respuesta.tipo === 'config') return;
+      estado.enVuelo = false;
       procesarDeteccion(respuesta);
     };
   }
@@ -274,6 +456,9 @@
   }
 
   function procesarDeteccion(respuesta) {
+    estado.candidatos = respuesta.candidatos || null;
+    actualizarPanelDiagnostico(respuesta);
+
     if (!respuesta.encontrado) {
       estado.deteccion = null;
       estado.quadPrevio = null;
@@ -366,6 +551,8 @@
   // --- Bucle de envio de cuadros -----------------------------------------
   function bucleAnalisis(generacion) {
     if (!estado.activo || generacion !== estado.generacion) return;
+    // Cubre los cambios de formato y los giros de pantalla, que mueven la guia.
+    enviarConfig();
     const ahora = Date.now();
     const listo =
       estado.ws?.readyState === WebSocket.OPEN &&
@@ -408,6 +595,45 @@
   }
 
   // --- Captura ------------------------------------------------------------
+  function cuadroActualJpeg(calidad) {
+    lienzoCaptura.width = el.video.videoWidth;
+    lienzoCaptura.height = el.video.videoHeight;
+    lienzoCaptura.getContext('2d').drawImage(el.video, 0, 0);
+    return new Promise((listo) => lienzoCaptura.toBlob(listo, 'image/jpeg', calidad));
+  }
+
+  async function guardarDiagnostico() {
+    if (!el.video.videoWidth) return;
+    el.btnDiagnostico.disabled = true;
+    const textoPrevio = el.btnDiagnostico.textContent;
+    el.btnDiagnostico.textContent = 'Guardando...';
+    try {
+      const blob = await cuadroActualJpeg(0.92);
+      const cuerpo = new FormData();
+      cuerpo.append('imagen', blob, 'diagnostico.jpg');
+      cuerpo.append('formato', el.selFormato.value);
+      const guia = guiaNormalizada();
+      if (guia) cuerpo.append('guia', JSON.stringify(guia));
+      const respuesta = await fetch('/api/diagnostico', { method: 'POST', body: cuerpo });
+      const datos = await respuesta.json();
+      if (!datos.ok) throw new Error(datos.error || 'fallo el diagnostico');
+      el.panelDiagnostico.classList.remove('oculto');
+      estado.panelCongeladoHasta = Date.now() + 12000;
+      el.panelDiagnostico.textContent =
+        `Guardado: ${datos.base}\n` +
+        `candidatos: ${datos.informe.candidatos.length}  encontrado: ${datos.informe.encontrado}\n` +
+        JSON.stringify(datos.informe.ganador ?? datos.informe.candidatos.slice(0, 3), null, 1);
+      el.btnDiagnostico.textContent = 'Guardado';
+      setTimeout(() => {
+        el.btnDiagnostico.textContent = textoPrevio;
+      }, 1500);
+    } catch (error) {
+      el.btnDiagnostico.textContent = `Error: ${error.message}`;
+    } finally {
+      el.btnDiagnostico.disabled = false;
+    }
+  }
+
   async function capturar() {
     if (estado.capturando || !el.video.videoWidth) return;
     estado.capturando = true;
@@ -415,18 +641,15 @@
     actualizarPista('Procesando...', '');
 
     try {
-      lienzoCaptura.width = el.video.videoWidth;
-      lienzoCaptura.height = el.video.videoHeight;
-      lienzoCaptura.getContext('2d').drawImage(el.video, 0, 0);
-      const blob = await new Promise((listo) =>
-        lienzoCaptura.toBlob(listo, 'image/jpeg', 0.95),
-      );
+      const blob = await cuadroActualJpeg(0.95);
 
       const cuerpo = new FormData();
       cuerpo.append('imagen', blob, 'captura.jpg');
       cuerpo.append('formato', el.selFormato.value);
       cuerpo.append('modo', el.selModo.value);
       cuerpo.append('ajustar_formato', el.chkAjustar.checked ? 'true' : 'false');
+      const guia = guiaNormalizada();
+      if (guia) cuerpo.append('guia', JSON.stringify(guia));
 
       // Si hay una deteccion fresca se reutiliza; si no, el servidor redetecta.
       const deteccion = estado.deteccion;
@@ -456,6 +679,7 @@
     el.imgResultado.src = `${datos.url_imagen}?t=${Date.now()}`;
     el.enlaceDescarga.href = datos.url_imagen;
     el.enlaceDescarga.setAttribute('download', datos.captura.archivo);
+    estado.capturaActual = datos.captura.id;
 
     const filas = [
       ['Archivo', datos.captura.archivo],
@@ -468,12 +692,142 @@
     el.metaResultado.innerHTML = filas
       .map(([clave, valor]) => `<dt>${clave}</dt><dd>${valor}</dd>`)
       .join('');
-    el.jsonResultado.textContent = JSON.stringify(datos.datos, null, 2);
+    mostrarAnalisis(datos.datos, datos.captura.id);
+  }
+
+  // --- Datos extraidos ----------------------------------------------------
+  function escapar(texto) {
+    const nodo = document.createElement('span');
+    nodo.textContent = texto === null || texto === undefined ? '' : String(texto);
+    return nodo.innerHTML;
+  }
+
+  function mostrarAnalisis(datos, capturaId) {
+    el.jsonResultado.textContent = JSON.stringify(datos, null, 2);
+    const estadoAnalisis = datos?.estado;
+
+    if (estadoAnalisis === 'en_proceso') {
+      el.estadoAnalisis.className = 'estado-analisis espera';
+      el.estadoAnalisis.textContent = `Leyendo el documento con ${datos.modelo || 'el modelo'}`;
+      el.metaInforme.classList.add('oculto');
+      el.tablaEnvoltorio.classList.add('oculto');
+      sondearAnalisis(capturaId);
+      return;
+    }
+    if (estadoAnalisis === 'sin_clave') {
+      el.estadoAnalisis.className = 'estado-analisis';
+      el.estadoAnalisis.textContent =
+        'Extraccion desactivada: falta LABLENS_NVIDIA_API_KEY en el entorno del servidor.';
+      el.metaInforme.classList.add('oculto');
+      el.tablaEnvoltorio.classList.add('oculto');
+      return;
+    }
+    if (estadoAnalisis !== 'ok') {
+      el.estadoAnalisis.className = 'estado-analisis error';
+      el.estadoAnalisis.textContent = `No se pudo extraer (${estadoAnalisis || 'desconocido'}): ${
+        datos?.error || 'sin detalle'
+      }`;
+      el.metaInforme.classList.add('oculto');
+      el.tablaEnvoltorio.classList.add('oculto');
+      return;
+    }
+
+    const total = datos.total_resultados || 0;
+    const fuera = datos.fuera_de_rango || 0;
+    el.estadoAnalisis.className = 'estado-analisis ok';
+    el.estadoAnalisis.textContent =
+      `${total} biomarcador${total === 1 ? '' : 'es'} extraido${total === 1 ? '' : 's'}` +
+      (fuera ? ` - ${fuera} fuera de rango` : '');
+
+    const bd = datos.persistencia?.base_de_datos;
+    let textoBd = null;
+    if (bd?.guardado) {
+      textoBd = `si - documento ${bd.documento_id}, ${bd.valores} valores`;
+      if (bd.biomarcadores_nuevos) {
+        textoBd += `, ${bd.biomarcadores_nuevos} biomarcador(es) nuevo(s)`;
+      }
+    } else if (bd) {
+      textoBd = `no (${bd.motivo}) - ${bd.mensaje || ''}`;
+    }
+
+    const cabecera = [
+      ['Centro medico', datos.centro_medico],
+      ['Ubicacion', datos.ubicacion],
+      ['Paciente', datos.paciente],
+      ['Fecha del documento', datos.fecha_documento],
+      ['Modelo', datos.modelo],
+      ['Tiempo', datos.ms_respuesta ? `${datos.ms_respuesta} ms` : null],
+      ['En base de datos', textoBd],
+    ].filter(([, valor]) => valor);
+    el.metaInforme.innerHTML = cabecera
+      .map(([clave, valor]) => `<dt>${escapar(clave)}</dt><dd>${escapar(valor)}</dd>`)
+      .join('');
+    el.metaInforme.classList.toggle('oculto', cabecera.length === 0);
+
+    el.cuerpoTabla.innerHTML = (datos.resultados || [])
+      .map((fila) => {
+        const alerta = fila.fuera_de_rango === 1;
+        const dudoso = fila.fuera_de_rango === null;
+        const marca = alerta
+          ? '<span class="marca marca-alerta">fuera</span>'
+          : dudoso
+            ? '<span class="marca marca-duda">?</span>'
+            : '<span class="marca marca-ok">ok</span>';
+        return (
+          `<tr class="${alerta ? 'alerta' : ''}">` +
+          `<td>${escapar(fila.biomarcador)}</td>` +
+          `<td>${escapar(fila.valor_texto ?? '')}</td>` +
+          `<td>${escapar(fila.unidad ?? '')}</td>` +
+          `<td>${escapar(fila.rango_texto ?? '')}</td>` +
+          `<td>${marca}</td></tr>`
+        );
+      })
+      .join('');
+    el.tablaEnvoltorio.classList.toggle('oculto', !(datos.resultados || []).length);
+  }
+
+  function sondearAnalisis(capturaId) {
+    if (estado.sondeo) clearTimeout(estado.sondeo);
+    let intentos = 0;
+    const arranque = Date.now();
+    const consultar = async () => {
+      // Si el usuario ya paso a otra captura, este sondeo deja de importar.
+      if (estado.capturaActual !== capturaId) return;
+      intentos += 1;
+      // Se muestra el tiempo transcurrido: el servicio puede tardar minutos y
+      // sin esto la pantalla parece congelada.
+      const segundos = Math.round((Date.now() - arranque) / 1000);
+      el.estadoAnalisis.textContent =
+        `Leyendo el documento con ${estado.config?.extraccion?.modelo || 'el modelo'} (${segundos} s)`;
+      try {
+        const respuesta = await fetch(`/api/capturas/${capturaId}/datos`);
+        if (respuesta.ok) {
+          const cuerpo = await respuesta.json();
+          if (cuerpo.datos?.estado !== 'en_proceso') {
+            mostrarAnalisis(cuerpo.datos, capturaId);
+            return;
+          }
+        }
+      } catch (error) {
+        // Se ignora y se reintenta: puede ser un corte momentaneo de red.
+      }
+      if (intentos >= SONDEOS_MAXIMOS) {
+        el.estadoAnalisis.className = 'estado-analisis error';
+        el.estadoAnalisis.textContent =
+          'El analisis tarda mas de lo esperado. La captura ya esta guardada; revisa la consola del servidor.';
+        return;
+      }
+      estado.sondeo = setTimeout(consultar, INTERVALO_SONDEO_MS);
+    };
+    estado.sondeo = setTimeout(consultar, INTERVALO_SONDEO_MS);
   }
 
   function volverACamara() {
     el.resultado.classList.add('oculto');
     el.camara.classList.remove('oculto');
+    if (estado.sondeo) clearTimeout(estado.sondeo);
+    estado.sondeo = null;
+    estado.capturaActual = null;
     estado.deteccion = null;
     estado.quadPrevio = null;
     estado.estables = 0;
@@ -498,6 +852,7 @@
       await activarCamara();
       await listarCamaras();
       el.inicio.classList.add('oculto');
+      el.usuario.classList.add('oculto');
       el.camara.classList.remove('oculto');
       conectar();
       arrancarBucles();
@@ -523,9 +878,25 @@
     return error?.message || 'No se pudo iniciar la camara.';
   }
 
+  el.btnGuardarUsuario.addEventListener('click', guardarUsuario);
   el.btnCapturar.addEventListener('click', capturar);
   el.btnNueva.addEventListener('click', volverACamara);
+  el.btnDiagnostico.addEventListener('click', guardarDiagnostico);
   el.selCamara.addEventListener('change', () => activarCamara(el.selCamara.value));
+  el.selFormato.addEventListener('change', () => enviarConfig());
+  el.chkAjustar.addEventListener('change', () => enviarConfig());
+  el.chkDiagnostico.addEventListener('change', () => {
+    estado.candidatos = null;
+    el.btnDiagnostico.classList.toggle('oculto', !el.chkDiagnostico.checked);
+    el.panelDiagnostico.classList.toggle('oculto', !el.chkDiagnostico.checked);
+    enviarConfig();
+  });
   el.video.addEventListener('loadedmetadata', ajustarVisor);
   window.addEventListener('orientationchange', () => setTimeout(ajustarVisor, 300));
+
+  // Se carga la configuracion al abrir la pagina para poder mostrar el
+  // formulario de usuario local antes de encender la camara.
+  cargarConfig().catch(() => {
+    /* si falla, el boton de activar camara la vuelve a pedir */
+  });
 })();

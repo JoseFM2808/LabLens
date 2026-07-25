@@ -14,11 +14,13 @@ class Formato:
     ratio: float  # ancho / alto
 
 
+# A4 y A5 comparten exactamente la misma proporcion, 1:raiz(2). Por eso un solo
+# formato cubre ambos tamanos y sirve como pista fuerte para el detector.
 FORMATOS = {
     f.clave: f
     for f in (
-        Formato("a4_vertical", "A4 vertical (210x297)", 210 / 297),
-        Formato("a4_horizontal", "A4 horizontal (297x210)", 297 / 210),
+        Formato("a4_vertical", "A4 / A5 vertical (1:1.41)", 210 / 297),
+        Formato("a4_horizontal", "A4 / A5 horizontal (1.41:1)", 297 / 210),
         Formato("carta_vertical", "Carta vertical (216x279)", 216 / 279),
         Formato("carta_horizontal", "Carta horizontal (279x216)", 279 / 216),
         Formato("ticket", "Ticket / tira de resultados", 80 / 200),

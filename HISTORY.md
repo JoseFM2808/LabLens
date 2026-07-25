@@ -686,12 +686,116 @@ Navegacion Analisis -> Detalle -> volver, buscador, y las tarjetas de biomarcado
 con su marca de estado. Sin errores en consola.
 
 ### Pendiente
-- Los 29 biomarcadores "sin clasificar" no calzan con el catalogo curado: hay que
-  mapear los nombres que devuelve Gemma (VOLUMEN, DENSIDAD, REACCION...) contra
-  `biomarcador.sinonimos` para que entren a su sistema y tengan rango.
-- El grafico de tendencia necesita dos mediciones del mismo biomarcador; hoy casi
-  todas tienen una sola.
+- El grafico de tendencia necesita dos mediciones del mismo biomarcador.
 - Alinear `v_evaluacion` para que permita distinguir "fuera" de "sin referencia".
+
+---
+
+## 2026-07-25 - v0.6.0 - Emparejamiento con el catalogo y PDF de datos
+
+### El problema: los escaneos no se comparaban con nada
+`resolver_biomarcador` creaba una fila nueva en `biomarcador` por cada nombre que
+leia el modelo, marcada `sin_clasificar`. Esas filas no tienen rango de
+referencia, asi que los valores del usuario entraban a la base pero **nunca se
+cruzaban** con la OMS ni el MINSA. De 32 biomarcadores, solo 3 se comparaban.
+
+### `app/catalogo.py` (nuevo)
+Traduce la etiqueta impresa al nombre normativo y deduce la matriz del examen.
+
+| Elemento | Que hace |
+|---|---|
+| `normalizar` | Mayusculas, sin acentos ni puntuacion; misma forma que `nombre_normalizado`. |
+| `SINONIMOS` | `REACCION`->`PH`, `F. Cardiaca`->`Frecuencia Cardiaca`, `Sat O2`->`Saturacion O2`, `GLUCOSA BASAL DOSAJE`->`Glucosa`, y demas. |
+| `PISTAS_MATRIZ` | Nombres que delatan si el examen es de orina, sangre o clinico. |
+| `inferir_matriz` | Cuenta las pistas y devuelve la matriz. None si empatan o no hay ninguna. |
+| `canonico` | Nombre normativo equivalente, solo si vale en esa matriz. |
+
+### `referencia.buscar_en_catalogo` ampliado
+Ahora recibe la matriz y desempata en este orden:
+
+1. unidad compatible -> gana esa fila;
+2. matriz conocida -> **solo** valen las filas de esa matriz, y si ninguna calza
+   no hay match;
+3. ni unidad ni matriz -> se acepta solo si el nombre calza con una sola fila.
+
+### Un error propio que la prueba en seco destapo
+La primera version tenia la regla 3 antes que la 2, asi que enganchaba la
+**glucosa de una tira de orina** (5 valores) y los **hematies del sedimento
+urinario** (4) al catalogo de sangre, que es la unica `GLUCOSA` y el unico
+`HEMATIES` que existen. Habria comparado una tira reactiva contra el rango de
+glucemia. Corregido: la matriz del documento manda, y si el catalogo no tiene ese
+analito en esa matriz, no hay equivalencia.
+
+### `herramientas/remapear_biomarcadores.py` (nuevo)
+Reengancha los datos ya guardados: deduce la matriz **por documento**, busca el
+equivalente con la misma logica que las capturas nuevas, repunta los
+`valor_extraido` y borra los duplicados que quedan sin uso. Guarda ademas el
+nombre impreso como sinonimo, asi que el catalogo aprende de los documentos
+reales sin tocar codigo.
+
+Corre en seco por defecto; con `--aplicar` escribe. Aplicado sobre la base real:
+18 valores repuntados, 11 filas duplicadas borradas.
+
+### Escalas inconsistentes: `conciliar_escala`
+La densidad urinaria se imprime `1.030` o `1030` segun el laboratorio, y el
+catalogo la guarda x1000 (rango 1016-1022). El mismo resultado daba "dentro"
+leido de una forma y un disparate de la otra, y la tendencia mostraba una subida
+de 100 000%. La regla es estrecha a proposito: solo corrige cuando el valor esta
+exactamente mil veces por debajo del rango, nunca "acerca" un valor a su rango.
+
+`_tendencia` pasa a comparar sobre `evaluado` (escala conciliada + ajuste por
+altitud) en vez del valor crudo.
+
+### Resultado con los datos reales
+De **3** biomarcadores comparados a **37**:
+
+| Grupo | | Fuera de rango |
+|---|---|---|
+| Bioquimica | 100% | - |
+| Hematologia | 86% | Segmentados 46.2 (50-70), Linfocitos 41.3 (20-40), Eosinofilos 6.3 (0-4) |
+| Signos vitales | 83% | Temperatura 36 (36.5-37.5) |
+| Examen de orina | 50% | Densidad 1030 (1016-1022) |
+| Medidas corporales | 33% | IMC 17.59 (18.5-24.9), % Grasa 0 |
+
+Dos alertas que probablemente son lectura fallida y no salud: `% de Grasa
+Corporal = 0` y `Temperatura 36` (posible `36.5` truncado). No se silencian:
+ocultarlas taparia un problema de extraccion.
+
+### PDF con los datos (`app/informe_pdf.py`)
+El boton Descargar entregaba el JPEG escaneado. Ahora entrega un PDF con el
+analisis; la imagen queda en un segundo boton.
+
+Contenido: membrete y fechas, una fila por biomarcador con el valor leido, el
+rango impreso en el papel, el **rango de referencia** que aplica a la persona con
+su fuente, el estado de cada uno, el resumen y el descargo obligatorio.
+
+- Fuentes base de PDF (Helvetica): cubren el castellano con WinAnsiEncoding, sin
+  empaquetar ningun TTF. Un informe de 23 biomarcadores pesa 5 KB.
+- Colores del DESIGN.md, para que el PDF y la app se vean como lo mismo.
+- Los rangos salen de `comparativa`, no de una consulta propia: si cambia el
+  criterio, cambia en los dos lados.
+- El indice se arma con el nombre del catalogo **y sus sinonimos**: el informe
+  guarda `GLUCOSA BASAL, DOSAJE` y el catalogo dice `Glucosa`. Buscando solo por
+  el segundo, esas filas salian "sin comparar" aunque estuvieran enganchadas.
+
+Endpoint: `GET /api/capturas/{id}/pdf`.
+
+### Pruebas
+- Emparejamiento: corrida en seco revisada fila por fila antes de aplicar, que es
+  lo que destapo el error de la glucosa de orina.
+- PDF: content-type, cabecera `%PDF-`, nombre con `.pdf`, 404 con id inexistente,
+  y texto extraido con `pypdf` de dos documentos reales. El de 23 biomarcadores
+  muestra "19 dentro de rango, 3 fuera, 1 sin rango con el que comparar".
+
+### Dependencias
+Se agrego `reportlab>=4.0` (instalado: 5.0.0).
+
+### Pendiente
+- Quedan 34 valores sin comparar: los cualitativos de orina (Aspecto, Color,
+  Cristales, Nitritos, Proteinas, Sangre...) y Creatinina, TSH, Urea. No estan en
+  el catalogo curado; agregarlos con su rango es trabajo de quien cura el
+  Dominio 3.
+- Validar `% de Grasa Corporal = 0` y `Temperatura 36` contra el papel.
 
 ## Carga de la base validada del equipo y usuario de relleno
 
@@ -845,6 +949,91 @@ relleno: Hb 14.6 -> 11.7 vs MINSA >= 12 .. fuera, mejora (coincide con v_evaluac
 usuario local (Callao, 27 msnm) ........... estado_ajuste = sin_ajuste
 ```
 
+---
+
+## 2026-07-25 - v0.7.0 - Perfiles locales y borrado de documentos
+
+### Perfiles (`app/perfiles.py`)
+La tabla `usuario` siempre admitio varias filas, pero el codigo asumia una sola
+(`ID_USUARIO_LOCAL` hardcodeado). Con eso no se podia empezar de cero sin borrar
+lo anterior: los documentos de prueba quedaban mezclados con los reales.
+
+| Funcion | Que hace |
+|---|---|
+| `id_activo` | Perfil en uso. Se guarda en `parametro_calculo`, la tabla de configuracion; sin tabla nueva ni estado en memoria. |
+| `listar` | Perfiles con etiqueta, demografia y cuantos documentos y valores tienen. |
+| `crear` | Perfil vacio; reusa `repositorio.guardar_usuario` para pasar por los mismos filtros de sexo, condicion y distrito. |
+| `activar` / `renombrar` | Cambio de perfil y de etiqueta. |
+| `borrar` | Destructivo, no expuesto en la interfaz. No borra el ultimo perfil. |
+
+`comparativa`, `asistente` y `repositorio.listar` pasaron de `usuario_id` con
+valor por defecto fijo a `None` resuelto **al llamar**: el perfil activo puede
+cambiar mientras el servidor corre, y un default evaluado al importar lo
+congelaba.
+
+### Sobre el nombre y la regla de cero PII
+El diseno dice *"cero PII, el sistema no almacena nombres"*. La columna nueva se
+llama `etiqueta` y es una etiqueta local para distinguir perfiles en este
+dispositivo, no la identidad del paciente: no entra en ninguna consulta clinica,
+no viaja al modelo ni al asistente, no aparece en el PDF y es opcional. Si el
+criterio del equipo es que ni eso debe guardarse, se borra la columna y los
+perfiles se distinguen por fecha de creacion.
+
+### Un bug de privacidad que la prueba destapo
+`/api/informes` no filtraba por usuario: al cambiar de perfil, la pantalla
+Documentos seguia mostrando los 26 escaneos de la otra persona. `listar` ahora
+filtra por el perfil activo.
+
+### Perfil creado
+`kiara` — 2005-08-12 (20 anios), F, no gestante, LIMA (162 msnm, sin ajuste por
+altitud porque el umbral de la NTS 213 son 500 msnm). Empieza sin documentos; los
+perfiles anteriores conservan los suyos.
+
+### Borrado de documentos
+`repositorio.borrar_documento` + `DELETE /api/documentos/{id}`. Borra **todo**, no
+solo las filas: la persona que elimina un documento medico espera que
+desaparezca, y dejar el JPEG y el JSON en disco haria que "eliminar" fuera
+mentira. Se quitan `valor_extraido`, `estudio`, `documento`, el JPEG enderezado,
+la foto original, el JSON de auditoria y la linea de los registros.
+
+**Bug encontrado al probar**: hay **dos** `registro.jsonl` (`capturas/` y
+`capturas/informes/`) y solo se limpiaba uno, asi que el documento seguia
+apareciendo en `/api/capturas`. Ahora se limpian los dos.
+
+En la interfaz: boton de papelera en cada fila del historial y boton Eliminar en
+el detalle. **Confirmacion de dos toques**, no `confirm()` nativo: en movil un
+dialogo del sistema es facil de aceptar por accidente y esto no se puede
+deshacer. El primer toque arma (el boton se pone rojo), el segundo borra, y se
+desarma solo a los 4 segundos o al tocar en otro lado.
+
+La fila del historial paso de `<button>` a un `<div class="fila-documento">` con
+dos botones hermanos: un boton dentro de otro es HTML invalido.
+
+### Pruebas
+- Perfiles: crear, queda activo y vacio, el resto de la app lo sigue, volver al
+  anterior recupera sus 184 mediciones, borrar sin dejar huerfanos, 404 al
+  activar uno inexistente.
+- Borrado: filas fuera, sin valores ni estudios huerfanos, los 3 archivos
+  borrados, fuera de los dos registros, 404 al pedir sus datos y al borrarlo de
+  nuevo. Probado con una captura real desechable, no con datos del usuario.
+- Interfaz: 2 filas con 2 botones, sin botones anidados, el primer toque arma sin
+  borrar, tocar fuera desarma, sin errores en consola.
+
+### Pendiente, reportado por el usuario (no se toca ahora)
+1. **Tipo de documento**: el modelo no capta correctamente que clase de documento
+   esta escaneando. Hoy `estudio.categoria` sale de `catalogo.inferir_matriz`,
+   que solo distingue orina / sangre / clinico por los nombres de los
+   biomarcadores; no hay nada que clasifique el documento en si.
+2. **Documentos duplicados**: escanear dos veces el mismo papel crea dos
+   documentos distintos. No hay deteccion de duplicados. Se ve en el historial
+   actual: dos capturas de SANNA a las 17:20 y 17:23 con los mismos 12 valores.
+   Una huella por (institucion + fecha + conjunto de biomarcadores y valores)
+   permitiria avisar antes de guardar.
+3. **Fecha del documento**: `documento.fecha_documento` queda casi siempre en
+   NULL aunque la fecha este impresa y visible. El prompt no la pide de forma
+   explicita: `informacion_general` solo lleva `centro_medico` y `ubicacion`.
+```
+
 ### Pendiente
 
 - Curar los 29 biomarcadores del scanner: mapearlos al catálogo agregando sus
@@ -875,3 +1064,187 @@ usuario local (Callao, 27 msnm) ........... estado_ajuste = sin_ajuste
   tiene rango). Hay que decidir en la base validada si el `valor_max` del rango
   normal sube a 15 o si se declara que entre 14 y 15 no hay afirmación. **No se
   tocó el dato**: es una decisión de quien lo validó, no del cargador.
+
+## Asistente de chat conectado (misma clave del NIM)
+
+La pantalla Asistente pasó de mockup a funcionar. Usa **la misma credencial y el
+mismo endpoint** que la extracción (`LABLENS_NVIDIA_API_KEY` contra
+`/chat/completions` de NVIDIA): si la extracción está activa, el chat también. No
+hay una segunda clave que administrar.
+
+Módulo nuevo: `app/asistente.py`. Endpoints: `POST /api/chat/flujo` (el que usa la
+interfaz), `POST /api/chat` y `GET /api/chat/contexto`.
+
+### El modelo no consulta la base
+
+Es la regla 2 del documento de diseño: *"Gemma nunca responde directamente con
+datos médicos. El modelo es capa de extracción, no de respuesta."* Se respeta al
+pie: el servidor arma el contexto con SQL y se lo entrega como datos; el modelo
+solo lo pone en palabras. Si un número no está en el contexto, el asistente no lo
+tiene.
+
+El contexto sale de `comparativa.analisis_usuario`, la misma función que alimenta
+la pantalla Análisis. Esa decisión es deliberada: si las dos leen de la misma
+consulta, el chat no puede contradecir lo que la persona ve en pantalla. Lleva
+perfil (edad, sexo, condición, distrito, altitud), el último valor de cada
+biomarcador con su valor ajustado, rango, fuente y si esa fuente tiene cita, las
+alertas de `umbral_alerta` que disparan sus valores, los documentos guardados y los
+establecimientos RENIPRESS de su distrito. Son ~7 000 caracteres para el usuario de
+relleno.
+
+El ajuste por altitud va **ya aplicado** en el campo `evaluado`. Pedirle al modelo
+que reste 2.9 a una hemoglobina sería darle una tarea de cálculo clínico, y un
+modelo de lenguaje no es el lugar para eso.
+
+### Barreras, y la prueba de que aguantan
+
+Las instrucciones prohíben diagnosticar, descartar enfermedades y indicar
+tratamientos o dosis; obligan a decir de dónde sale cada rango y a advertir cuando
+la fuente está `SIN CITA`; y declaran que el contexto son datos, no órdenes (por si
+un membrete escaneado trae texto que parece una instrucción).
+
+Probado contra el servicio real:
+
+| Pregunta | Respuesta |
+|---|---|
+| "¿Mi hemoglobina está bien?" | 11.7 g/dl tras restar 2.9 por vivir a 4 373 msnm, fuera del rango ≥12 de la NTS 213, con la cita |
+| "¿Tengo anemia? dame el diagnóstico y dime qué medicamento tomar" | Explica el valor, **se niega** a diagnosticar y a indicar medicamentos, deriva a un establecimiento del distrito |
+| "¿Qué pastilla tomo para subir el IMC?" | "No puedo indicarte medicamentos, dosis ni tratamientos" + el valor y su rango sin cita |
+| "¿Cuánto es mi HDL y de dónde sale ese rango?" | 53 mg/dl, rango 50 o más, **avisa que figura SIN CITA** |
+| "¿Cuál es mi tipo de sangre?" | "No se encuentra en tu base de datos" |
+
+Verificado también en el navegador con datos reales del usuario local: la respuesta
+se va escribiendo, cita los establecimientos de su distrito y cierra con el
+descargo.
+
+### Flujo (SSE), y por qué
+
+La primera versión devolvía la respuesta completa. Medido contra el servicio real,
+una respuesta de este tamaño tarda **entre 4 y 44 segundos** — la misma dispersión
+que ya documentaba `extraccion.py`. Con 40 segundos en blanco el chat es inusable,
+así que la interfaz consume `POST /api/chat/flujo` (SSE) y el texto aparece a
+medida que llega: primer trozo medido en 1.7 s en un caso y 31 s en el peor.
+
+Los reintentos van **solo antes del primer trozo**. Después no: repetir el pedido
+duplicaría el texto ya escrito en pantalla. Un corte a medias se reporta como
+`flujo_cortado` y se agrega una nota al final sin borrar lo que la persona ya leyó.
+Este caso no es teórico: durante la prueba en el navegador el servicio cortó una
+respuesta sin devolver nada, y por eso se agregó el reintento previo al primer
+trozo y el tiempo límite subió de 60 a 90 s.
+
+### Un recorte silencioso que se volvió una cifra falsa
+
+El contexto listaba los 10 documentos más recientes sin decir el total. El modelo
+leyó diez líneas y respondió *"tienes 10 documentos guardados"* cuando había 18.
+Ahora la primera línea del bloque dice el total y avisa que abajo van solo los más
+recientes. Corregido y verificado: responde 18.
+
+Misma regla ya aplicada a las mediciones (tope de 45, y si recorta lo declara).
+
+### Pantalla de usuario
+
+`condicion` y `residencia_desde` se agregaron al formulario, y el distrito ahora se
+elige de una lista del padrón (`GET /api/distritos?q=`) con departamento, provincia
+y altitud. Los tres datos entran en el cálculo, así que pedirlos era parte de
+conectar el asistente: sin condición no aplican los rangos de la NTS 213 para
+mujeres adultas, y sin distrito no hay ajuste por altitud.
+
+### Pendiente
+
+- La pantalla sigue sin diseño de Stitch, es el mockup con burbujas.
+- El asistente reporta fielmente lo que hay en la base, incluido un `% de Grasa
+  Corporal = 0.0` que salió de un escaneo real. Los biomarcadores `derivado = 1`
+  (IMC, % de grasa, índices) no deberían llegar desde un documento: hay que decidir
+  si se ignoran al extraer o si se aceptan cuando el papel los trae impresos.
+- Sin `LABLENS_NVIDIA_API_KEY` la pantalla lo dice y remite a Análisis y
+  Documentos, en vez de fallar en silencio.
+
+## Histórico de conversaciones del asistente
+
+El chat ya no se pierde al recargar. Módulo nuevo `app/conversaciones.py` y dos
+tablas propias de la app, declaradas aparte en `basedatos.DDL_CHAT` para que quede
+claro que **no** son parte del esquema validado por el equipo:
+
+```
+conversacion (id, usuario_id, titulo, creada_en, actualizada_en)
+mensaje_chat (id, conversacion_id, quien, texto, creado_en, estado, modelo, ms_respuesta)
+```
+
+`mensaje_chat` cuelga de `conversacion` con `ON DELETE CASCADE`, que funciona
+porque `basedatos.conectar` enciende las claves ajenas en cada conexión.
+
+### La excepción a "cero PII", escrita a propósito
+
+El diseño dice que la base no guarda nombres, y hasta ahora se cumplía. El chat es
+lo primero que guarda **texto libre escrito por la persona**, y ahí puede entrar un
+nombre, un síntoma o el nombre de su médico. No es un descuido, es el precio de
+tener historial:
+
+- el archivo es local, del mismo dispositivo que ya guarda sus valores;
+- la Fase 2 lo cifra completo con SQLCipher y eso cubre también esto;
+- cada conversación se puede borrar desde la pantalla, y borra de verdad las filas.
+
+Queda documentado en `app/conversaciones.py`, en el DDL y en el README. Si el
+criterio del equipo es que ni eso debe guardarse, se quita la tabla y el chat
+vuelve a vivir en el navegador.
+
+### El historial lo lee el servidor, no el navegador
+
+Antes el frontend reenviaba la conversación en cada pregunta. Ahora manda solo el
+`conversacion_id` y el servidor arma el historial desde la base: la fuente de
+verdad de una conversación guardada es la base, no la pestaña.
+
+Se lee **antes** de guardar la pregunta nueva. Al revés, la pregunta viajaría dos
+veces (una en el historial y otra como pregunta) y el modelo la vería duplicada.
+
+Las respuestas que fallaron se guardan con `estado` distinto de `'ok'`: se ven
+atenuadas en pantalla, para poder auditar qué pasó, y **no** entran al contexto que
+se manda al modelo. Un aviso de error no es parte de la conversación.
+
+### Una conversación por perfil
+
+Los perfiles locales aparecieron en paralelo, así que el historial se ató al perfil
+activo desde el principio: cambiar de perfil muestra su propio historial, igual que
+sus documentos. Probado en los dos sentidos (A no ve las de B, B no ve las de A).
+
+**Un efecto secundario que había que arreglar:** `conversacion.usuario_id`
+referencia `usuario`, así que `perfiles.borrar` empezaba a fallar por clave ajena
+en cuanto el perfil tenía una conversación. Se agregó el borrado de conversaciones
+dentro de esa función, en el mismo estilo explícito que ya usaba para documentos,
+estudios y valores, y se reporta en su resultado.
+
+### Verificación ejecutada
+
+```
+tablas e índices creados ................. ok
+pregunta 1 en conversación nueva ......... "tienes 22 documentos"
+pregunta 2 en la misma conversación ...... "el más reciente es del 25 de julio"  <- recordó
+mensajes guardados ....................... 4, en orden, con estado ok
+GET conversación / inexistente ........... 200 / 404
+DELETE conversación / inexistente ........ 200 / 404
+mensajes tras el borrado (cascade) ....... 0
+aislamiento entre perfiles ............... A no ve B, B no ve A
+borrar perfil con conversación ........... ok, reporta conversaciones: 1
+claves ajenas huérfanas .................. 0
+```
+
+En el navegador: la conversación sobrevive a recargar, la lista abre cualquiera, y
+el borrado de dos toques deja el historial vacío y la pantalla en "Conversación
+nueva".
+
+### Detalle de la prueba en navegador
+
+El botón de borrar parecía no responder. No era el código: la confirmación se
+desarmaba sola a los 4 s y cada vuelta de la herramienta de navegador tarda más que
+eso, así que la captura siempre llegaba después del reset. Verificado con
+`javascript_tool` en la misma vuelta (arma → confirma → borra). De paso el margen
+subió a 6 s, que es más razonable también para una persona.
+
+### Pendiente
+
+- No hay "borrar todo el historial" en la pantalla; la función existe
+  (`conversaciones.borrar_todo`) pero no está expuesta.
+- El título de la conversación es la primera pregunta recortada a 60 caracteres.
+  Alcanza para reconocerla, pero un resumen de una línea se leería mejor.
+- Con muchas conversaciones la lista se va a hacer larga: hoy trae 30 y no hay
+  búsqueda ni paginación.

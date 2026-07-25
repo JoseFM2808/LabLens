@@ -22,8 +22,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from . import basedatos
-from .repositorio import ID_USUARIO_LOCAL
+from . import basedatos, perfiles
 
 # Un cambio menor a esto no se considera tendencia: es ruido de medición.
 UMBRAL_TENDENCIA = 0.02
@@ -259,13 +258,19 @@ def _estado(valor: float | None, referencia: dict | None) -> str:
     return "dentro"
 
 
-def _tendencia(historial: list[dict]) -> str | None:
-    """Dirección del cambio entre las dos últimas mediciones numéricas."""
-    numericos = [h for h in historial if h["valor"] is not None]
+def _tendencia(historial: list[dict], clave: str = "evaluado") -> str | None:
+    """Dirección del cambio entre las dos últimas mediciones numéricas.
+
+    Se compara sobre `evaluado`, no sobre el valor crudo: ese ya viene con la
+    escala conciliada y el ajuste por altitud aplicado. Con el crudo, una
+    densidad leída ``1.030`` y otra ``1030`` -el mismo resultado- daban una
+    subida de 100 000%.
+    """
+    numericos = [h for h in historial if h.get(clave) is not None]
     if len(numericos) < 2:
         return None
-    previo = numericos[-2]["valor"]
-    ultimo = numericos[-1]["valor"]
+    previo = numericos[-2][clave]
+    ultimo = numericos[-1][clave]
     if previo == 0:
         return "estable" if ultimo == 0 else ("sube" if ultimo > 0 else "baja")
     cambio = (ultimo - previo) / abs(previo)
@@ -306,7 +311,14 @@ def _mejora(historial: list[dict], referencia: dict | None, clave: str = "valor"
     return "mejora" if cerca > 0 else "empeora"
 
 
-def analisis_usuario(usuario_id: str = ID_USUARIO_LOCAL) -> dict:
+def analisis_usuario(usuario_id: str | None = None) -> dict:
+    # El valor por defecto se resuelve al llamar, no al importar: el perfil
+    # activo puede cambiar mientras el servidor corre.
+    usuario_id = usuario_id or perfiles.id_activo()
+    return _analisis_usuario(usuario_id)
+
+
+def _analisis_usuario(usuario_id: str) -> dict:
     """Comparativa completa del usuario contra los rangos de referencia."""
     with basedatos.conectar() as conexion:
         usuario = conexion.execute(
@@ -444,6 +456,7 @@ def analisis_usuario(usuario_id: str = ID_USUARIO_LOCAL) -> dict:
                     "ultimo": ultimo,
                     "referencia": referencia,
                     "ajuste": ajuste,
+                    "mediciones_reescaladas": reescalados,
                     "estado": _estado(ultimo["evaluado"], referencia),
                     "tendencia": _tendencia(entrada["historial"]),
                     "evolucion": _mejora(entrada["historial"], referencia, "evaluado"),

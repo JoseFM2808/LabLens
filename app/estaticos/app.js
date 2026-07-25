@@ -79,12 +79,19 @@
     cuerpoTabla: document.querySelector('table.biomarcadores tbody'),
     accionesDocumento: $('acciones-documento'),
     enlaceDescarga: $('enlace-descarga'),
+    enlaceImagen: $('enlace-imagen'),
+    btnBorrarDocumento: $('btn-borrar-documento'),
+    estadoBorrado: $('estado-borrado'),
     detalleJson: $('detalle-json'),
     jsonResultado: $('json-resultado'),
     // asistente
     chatMensajes: $('chat-mensajes'),
     chatEntrada: $('chat-entrada'),
     btnEnviarChat: $('btn-enviar-chat'),
+    chatHistorico: $('chat-historico'),
+    chatTitulo: $('chat-titulo'),
+    btnChatNuevo: $('btn-chat-nuevo'),
+    btnChatHistorico: $('btn-chat-historico'),
     // usuario
     inpNacimiento: $('inp-nacimiento'),
     selSexo: $('sel-sexo'),
@@ -94,6 +101,12 @@
     pistaDistrito: $('pista-distrito'),
     inpResidenciaDesde: $('inp-residencia-desde'),
     btnGuardarUsuario: $('btn-guardar-usuario'),
+    listaPerfiles: $('lista-perfiles'),
+    btnNuevoPerfil: $('btn-nuevo-perfil'),
+    btnCancelarPerfil: $('btn-cancelar-perfil'),
+    campoEtiqueta: $('campo-etiqueta'),
+    inpEtiqueta: $('inp-etiqueta'),
+    tituloDatosPerfil: $('titulo-datos-perfil'),
     estadoUsuario: $('estado-usuario'),
     metaSistema: $('meta-sistema'),
   };
@@ -120,6 +133,11 @@
     activo: false,
     generacion: 0,
     // análisis y documento
+    perfiles: [],
+    creandoPerfil: false,
+    confirmandoBorrado: null,   // boton armado esperando el segundo toque
+    textoOriginalBorrado: null,
+    tiempoConfirmacion: null,
     analisis: null,        // respuesta de /api/analisis, para filtrar sin repedir
     capturaActual: null,
     sondeo: null,
@@ -410,15 +428,21 @@
             : `<span class="chip chip-alerta">sin leer</span>`;
         const sub = [fechaCorta(d.fecha_carga), d.distrito].filter(Boolean).join(' · ');
         return `
-        <button class="tarjeta-lista" data-documento="${escapar(d.id)}">
-          <span class="icono-caja">${icono('documento')}</span>
-          <span class="cuerpo">
-            <span class="titulo">${escapar(d.institucion_nombre || 'Documento sin membrete')}</span>
-            <span class="sub">${escapar(sub)}</span>
-          </span>
-          ${chip}
-          <span class="flecha">${icono('adelante')}</span>
-        </button>`;
+        <div class="fila-documento">
+          <button class="tarjeta-lista" data-documento="${escapar(d.id)}">
+            <span class="icono-caja">${icono('documento')}</span>
+            <span class="cuerpo">
+              <span class="titulo">${escapar(d.institucion_nombre || 'Documento sin membrete')}</span>
+              <span class="sub">${escapar(sub)}</span>
+            </span>
+            ${chip}
+            <span class="flecha">${icono('adelante')}</span>
+          </button>
+          <button class="btn-borrar-fila" data-borrar="${escapar(d.id)}"
+                  aria-label="Eliminar documento" title="Eliminar documento">
+            ${icono('borrar')}
+          </button>
+        </div>`;
       })
       .join('');
   }
@@ -733,6 +757,8 @@
   }
 
   function mostrarDocumento(datos, capturaId) {
+    el.estadoBorrado.textContent = '';
+    desarmarConfirmacion();
     el.jsonResultado.textContent = JSON.stringify(datos, null, 2);
     el.detalleJson.classList.remove('oculto');
     el.accionesDocumento.classList.remove('oculto');
@@ -742,10 +768,16 @@
     if (archivo) {
       el.imgResultado.src = `/capturas/${archivo}`;
       el.imgResultado.classList.remove('oculto');
-      el.enlaceDescarga.href = `/capturas/${archivo}`;
-      el.enlaceDescarga.setAttribute('download', archivo);
+      // La descarga entrega el PDF con los datos, no la foto. La imagen queda
+      // accesible en su propio enlace para quien necesite el original.
+      el.enlaceDescarga.href = `/api/capturas/${capturaId}/pdf`;
+      el.enlaceDescarga.removeAttribute('download'); // el nombre lo pone el servidor
+      el.enlaceImagen.href = `/capturas/${archivo}`;
+      el.enlaceImagen.setAttribute('download', archivo);
+      el.enlaceImagen.classList.remove('oculto');
     } else {
       el.imgResultado.classList.add('oculto');
+      el.enlaceImagen.classList.add('oculto');
     }
 
     const estadoInforme = datos?.estado;
@@ -878,10 +910,88 @@
   }
 
   // ======================================================================
+  // Borrado de documentos
+  // ======================================================================
+
+  // Confirmacion de dos toques en lugar de un dialogo del navegador: en movil un
+  // confirm() nativo es facil de aceptar por accidente, y aqui el borrado no se
+  // puede deshacer. El primer toque arma, el segundo borra, y a los 4 segundos
+  // se desarma solo.
+  const ESPERA_CONFIRMACION_MS = 4000;
+
+  function armarConfirmacion(boton, textoConfirmar) {
+    if (estado.confirmandoBorrado === boton) return true; // segundo toque
+    if (estado.confirmandoBorrado) desarmarConfirmacion();
+    estado.confirmandoBorrado = boton;
+    estado.textoOriginalBorrado = boton.innerHTML;
+    boton.classList.add('confirmando');
+    if (textoConfirmar) boton.innerHTML = textoConfirmar;
+    boton.setAttribute('title', 'Toca de nuevo para eliminar');
+    estado.tiempoConfirmacion = setTimeout(desarmarConfirmacion, ESPERA_CONFIRMACION_MS);
+    return false;
+  }
+
+  function desarmarConfirmacion() {
+    const boton = estado.confirmandoBorrado;
+    if (!boton) return;
+    boton.classList.remove('confirmando');
+    if (estado.textoOriginalBorrado) boton.innerHTML = estado.textoOriginalBorrado;
+    boton.setAttribute('title', 'Eliminar documento');
+    clearTimeout(estado.tiempoConfirmacion);
+    estado.confirmandoBorrado = null;
+    estado.textoOriginalBorrado = null;
+  }
+
+  async function borrarDocumento(documentoId, boton, textoConfirmar) {
+    if (!armarConfirmacion(boton, textoConfirmar)) return;
+    desarmarConfirmacion();
+    boton.disabled = true;
+    try {
+      const respuesta = await fetch(`/api/documentos/${documentoId}`, { method: 'DELETE' });
+      const datos = await respuesta.json();
+      if (!datos.ok) throw new Error(datos.error || 'no se pudo eliminar');
+
+      // El analisis y el inicio se recalculan: el documento ya no cuenta.
+      estado.analisis = null;
+      if (estado.capturaActual === documentoId) estado.capturaActual = null;
+      if (estado.vista === 'documento') {
+        irA('documentos');
+      } else {
+        cargarDocumentos();
+      }
+      cargarInicio();
+      avisarBorrado(
+        `Documento eliminado: ${datos.valores} valores y ${datos.archivos.length} archivos.`,
+        'ok',
+      );
+    } catch (error) {
+      avisarBorrado(`No se pudo eliminar: ${error.message}`, 'error');
+    } finally {
+      boton.disabled = false;
+    }
+  }
+
+  function avisarBorrado(texto, clase) {
+    el.estadoBorrado.className = `estado ${clase}`;
+    el.estadoBorrado.textContent = texto;
+    if (el.listaDocumentos) {
+      el.listaDocumentos.insertAdjacentHTML(
+        'beforebegin',
+        `<p class="estado ${clase}" data-aviso-borrado>${escapar(texto)}</p>`,
+      );
+      setTimeout(() => {
+        document.querySelectorAll('[data-aviso-borrado]').forEach((n) => n.remove());
+      }, 5000);
+    }
+  }
+
+  // ======================================================================
   // Vista: usuario
   // ======================================================================
 
   async function cargarUsuario() {
+    await cargarPerfiles();
+    if (estado.creandoPerfil) return; // no pisar el formulario a medio llenar
     try {
       const usuario = (await (await fetch('/api/usuario')).json()).usuario;
       if (usuario) {
@@ -932,6 +1042,13 @@
       el.estadoUsuario.textContent = 'Falta la fecha de nacimiento.';
       return;
     }
+    // En modo "perfil nuevo" el nombre es obligatorio: es lo unico que
+    // distingue un perfil de otro en la lista.
+    if (estado.creandoPerfil && !el.inpEtiqueta.value.trim()) {
+      el.estadoUsuario.className = 'estado error';
+      el.estadoUsuario.textContent = 'Ponle un nombre al perfil.';
+      return;
+    }
     el.btnGuardarUsuario.disabled = true;
     try {
       const cuerpo = new FormData();
@@ -940,18 +1057,95 @@
       cuerpo.append('condicion', el.selCondicion.value || 'general');
       cuerpo.append('distrito_residencia', el.inpDistrito.value.trim());
       cuerpo.append('residencia_desde', el.inpResidenciaDesde.value || '');
-      const datos = await (await fetch('/api/usuario', { method: 'POST', body: cuerpo })).json();
+
+      let ruta = '/api/usuario';
+      if (estado.creandoPerfil) {
+        cuerpo.append('etiqueta', el.inpEtiqueta.value.trim());
+        ruta = '/api/perfiles';
+      }
+      const datos = await (await fetch(ruta, { method: 'POST', body: cuerpo })).json();
       if (!datos.ok) throw new Error(datos.error || 'no se pudo guardar');
       if (estado.config) estado.config.usuario_configurado = true;
       el.estadoUsuario.className = 'estado ok';
-      el.estadoUsuario.textContent = 'Usuario local guardado.';
+      el.estadoUsuario.textContent = estado.creandoPerfil
+        ? 'Perfil creado y activado. Empieza sin documentos.'
+        : 'Datos del perfil guardados.';
+      salirDeCreacion();
       cargarUsuario();
+      cargarInicio();
     } catch (error) {
       el.estadoUsuario.className = 'estado error';
       el.estadoUsuario.textContent = `Error: ${error.message}`;
     } finally {
       el.btnGuardarUsuario.disabled = false;
     }
+  }
+
+  // --- Perfiles -----------------------------------------------------------
+
+  async function cargarPerfiles() {
+    let datos;
+    try {
+      datos = await (await fetch('/api/perfiles')).json();
+    } catch (error) {
+      el.listaPerfiles.innerHTML = '';
+      return;
+    }
+    estado.perfiles = datos.perfiles || [];
+    el.listaPerfiles.innerHTML = estado.perfiles
+      .map((p) => {
+        const nombre = p.etiqueta || (p.id === 'usuario-local' ? 'Perfil original' : p.id);
+        const detalle = `${p.documentos} documento${p.documentos === 1 ? '' : 's'}` +
+          ` · ${p.valores} valores · ${p.sexo} · ${String(p.fecha_nacimiento).slice(0, 4)}`;
+        return `
+        <button class="tarjeta-lista" data-perfil="${escapar(p.id)}">
+          <span class="icono-caja">${icono('persona')}</span>
+          <span class="cuerpo">
+            <span class="titulo">${escapar(nombre)}</span>
+            <span class="sub">${escapar(detalle)}</span>
+          </span>
+          ${p.activo ? '<span class="chip chip-ok">en uso</span>' : ''}
+        </button>`;
+      })
+      .join('');
+  }
+
+  async function activarPerfil(perfilId) {
+    const perfil = estado.perfiles.find((p) => p.id === perfilId);
+    if (!perfil || perfil.activo) return;
+    await fetch(`/api/perfiles/${perfilId}/activar`, { method: 'POST' });
+    estado.analisis = null;
+    estado.capturaActual = null;
+    await cargarUsuario();
+    cargarInicio();
+    el.estadoUsuario.className = 'estado ok';
+    el.estadoUsuario.textContent = `Perfil en uso: ${perfil.etiqueta || perfil.id}.`;
+  }
+
+  function entrarEnCreacion() {
+    estado.creandoPerfil = true;
+    el.campoEtiqueta.classList.remove('oculto');
+    el.btnCancelarPerfil.classList.remove('oculto');
+    el.btnNuevoPerfil.classList.add('oculto');
+    el.tituloDatosPerfil.textContent = 'Datos del perfil nuevo';
+    el.btnGuardarUsuario.textContent = 'Crear perfil';
+    // Los campos arrancan vacios: son de otra persona, no del perfil anterior.
+    for (const campo of [el.inpEtiqueta, el.inpNacimiento, el.inpDistrito, el.inpResidenciaDesde]) {
+      campo.value = '';
+    }
+    el.estadoUsuario.className = 'estado';
+    el.estadoUsuario.textContent =
+      'El perfil nuevo empieza sin documentos. Los del perfil anterior no se tocan.';
+    el.inpEtiqueta.focus();
+  }
+
+  function salirDeCreacion() {
+    estado.creandoPerfil = false;
+    el.campoEtiqueta.classList.add('oculto');
+    el.btnCancelarPerfil.classList.add('oculto');
+    el.btnNuevoPerfil.classList.remove('oculto');
+    el.tituloDatosPerfil.textContent = 'Datos del perfil activo';
+    el.btnGuardarUsuario.textContent = 'Guardar';
   }
 
   // ======================================================================
@@ -1500,17 +1694,18 @@
   // Asistente
   // ======================================================================
 
-  // El servidor no guarda la conversación: el historial vive aquí y se reenvía
-  // con cada pregunta. Al recargar la página, empieza de cero.
-  const conversacion = [];
-
+  // El historial lo guarda el servidor en la base. Aquí solo se recuerda cuál
+  // conversación está abierta; el contexto que ve el modelo se lee de la base.
   const ERRORES_CHAT = {
     sin_clave:
       'El asistente usa la misma clave que la extracción y no está configurada. ' +
       'Mientras tanto, tus valores están en Análisis y el historial en Documentos.',
-    error_red: 'No se pudo llegar al servicio. Revisa la conexión e inténtalo de nuevo.',
+    // El servicio tiene latencia muy dispersa y a veces corta sin responder. El
+    // servidor ya reintentó antes de mostrar texto, así que aquí solo queda avisar.
+    error_red: 'El servicio no respondió a tiempo. Vuelve a preguntar.',
     error_api: 'El servicio respondió con un error. Inténtalo de nuevo en un momento.',
     error_respuesta: 'El servicio respondió algo que no se pudo leer. Inténtalo de nuevo.',
+    flujo_cortado: '\n\n[La respuesta se cortó a mitad. Vuelve a preguntar.]',
     sin_pregunta: 'Escribe una pregunta.',
   };
 
@@ -1519,7 +1714,6 @@
     if (!texto || estado.chatEnCurso) return;
 
     agregarMensaje(texto, 'usuario');
-    conversacion.push({ quien: 'usuario', texto });
     el.chatEntrada.value = '';
 
     estado.chatEnCurso = true;
@@ -1534,8 +1728,9 @@
       const respuesta = await fetch('/api/chat/flujo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // El historial va sin el turno que se acaba de agregar: ese viaja en `mensaje`.
-        body: JSON.stringify({ mensaje: texto, historial: conversacion.slice(0, -1) }),
+        // Solo el id: el historial lo lee el servidor de la base, que es la
+        // fuente de verdad de una conversación guardada.
+        body: JSON.stringify({ mensaje: texto, conversacion_id: estado.chatId || null }),
       });
       if (!respuesta.ok || !respuesta.body) throw new Error('sin flujo');
 
@@ -1562,25 +1757,33 @@
           } catch (error) {
             continue;
           }
-          if (dato.tipo === 'trozo') {
+          if (dato.tipo === 'inicio') {
+            // Si la conversación era nueva, el servidor devuelve su id aquí: sin
+            // esto la siguiente pregunta abriría otra conversación.
+            estado.chatId = dato.conversacion_id;
+            if (dato.nueva) cargarHistoricoChat();
+          } else if (dato.tipo === 'trozo') {
             acumulado += dato.texto;
             parrafo.textContent = acumulado;
             burbuja.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
           } else if (dato.tipo === 'error') {
-            acumulado = dato.mensaje || ERRORES_CHAT[dato.estado] || 'No se pudo responder.';
+            const aviso = dato.mensaje || ERRORES_CHAT[dato.estado] || 'No se pudo responder.';
+            // Si ya había texto en pantalla, el aviso se agrega: borrar lo que la
+            // persona ya leyó es peor que dejarlo con una nota de que se cortó.
+            acumulado = acumulado ? acumulado + aviso : aviso;
             parrafo.textContent = acumulado;
           }
         }
       }
 
-      if (acumulado) conversacion.push({ quien: 'asistente', texto: acumulado });
-      else parrafo.textContent = 'No se pudo responder. Inténtalo de nuevo.';
+      if (!acumulado) parrafo.textContent = 'No se pudo responder. Inténtalo de nuevo.';
     } catch (error) {
       parrafo.textContent = ERRORES_CHAT.error_red;
     } finally {
       estado.chatEnCurso = false;
       el.btnEnviarChat.disabled = false;
       el.chatEntrada.focus();
+      cargarHistoricoChat();
     }
   }
 
@@ -1597,18 +1800,138 @@
     return burbuja;
   }
 
-  // Saludo al entrar por primera vez: dice de qué puede hablar y de qué no.
-  function abrirAsistente() {
-    if (el.chatMensajes.childElementCount > 0) return;
-    const activo = estado.config?.asistente?.activo;
+  const SALUDO_CHAT =
+    'Puedo explicarte los valores de tus documentos: qué significa cada uno, ' +
+    'cuál está fuera de rango y de qué norma sale ese rango. No doy diagnósticos ' +
+    'ni tratamientos.';
+
+  // ---------------------------------------------------------------- histórico
+
+  async function cargarHistoricoChat() {
+    try {
+      const datos = await (await fetch('/api/chat/conversaciones')).json();
+      estado.chatConversaciones = datos.conversaciones || [];
+    } catch (error) {
+      estado.chatConversaciones = [];
+    }
+    pintarHistoricoChat();
+  }
+
+  function pintarHistoricoChat() {
+    const lista = estado.chatConversaciones || [];
+    const abierta = lista.find((c) => c.id === estado.chatId);
+    el.chatTitulo.textContent = abierta
+      ? `${abierta.titulo} · ${abierta.mensajes} mensaje(s)`
+      : 'Conversación nueva';
+    el.btnChatHistorico.textContent = lista.length
+      ? `Ver historial (${lista.length})`
+      : 'Ver historial';
+    el.btnChatHistorico.disabled = lista.length === 0;
+    if (!lista.length) el.chatHistorico.classList.add('oculto');
+
+    el.chatHistorico.innerHTML = lista
+      .map(
+        (c) => `
+        <div class="tarjeta-lista" data-conversacion="${escapar(c.id)}"
+             style="${c.id === estado.chatId ? 'outline: 2px solid var(--primary)' : ''}">
+          <div class="icono-caja"><svg><use href="#i-chat" /></svg></div>
+          <div class="cuerpo">
+            <span class="titulo">${escapar(c.titulo)}</span>
+            <span class="sub">${escapar(fechaCorta(c.actualizada_en))} · ${c.mensajes} mensaje(s)</span>
+          </div>
+          <button class="btn btn-plano" data-borrar-conversacion="${escapar(c.id)}"
+                  style="width: auto; flex: 0 0 auto; min-height: 36px; padding: 0 12px">
+            Borrar
+          </button>
+        </div>`,
+      )
+      .join('');
+  }
+
+  function fechaCorta(texto) {
+    if (!texto) return '';
+    // SQLite devuelve 'YYYY-MM-DD HH:MM:SS' en UTC.
+    const fecha = new Date(`${String(texto).replace(' ', 'T')}Z`);
+    if (Number.isNaN(fecha.getTime())) return String(texto);
+    return fecha.toLocaleString('es-PE', {
+      day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+    });
+  }
+
+  async function abrirConversacion(id) {
+    if (estado.chatEnCurso) return;
+    try {
+      const datos = await (await fetch(`/api/chat/conversaciones/${id}`)).json();
+      if (!datos.ok) throw new Error('no existe');
+      estado.chatId = id;
+      el.chatMensajes.innerHTML = '';
+      for (const mensaje of datos.mensajes) {
+        const burbuja = agregarMensaje(mensaje.texto, mensaje.quien);
+        // Una respuesta que falló se marca: quedó guardada para poder auditarla,
+        // pero no es una respuesta del asistente.
+        if (mensaje.quien === 'asistente' && mensaje.estado && mensaje.estado !== 'ok') {
+          burbuja.style.opacity = '0.65';
+        }
+      }
+      el.chatHistorico.classList.add('oculto');
+      pintarHistoricoChat();
+    } catch (error) {
+      /* si no se pudo abrir, se deja la conversación actual */
+    }
+  }
+
+  // Dos toques para borrar: no hay diálogo del navegador, y un solo toque en una
+  // lista es demasiado fácil de pulsar por error. La confirmación se desarma
+  // sola a los 6 s, tiempo suficiente para leerla y decidir.
+  const MS_CONFIRMAR_BORRADO = 6000;
+
+  function pedirBorrarConversacion(boton, id) {
+    if (boton.dataset.confirmar !== '1') {
+      boton.dataset.confirmar = '1';
+      boton.textContent = '¿Seguro?';
+      setTimeout(() => {
+        if (!boton.isConnected) return;
+        boton.dataset.confirmar = '';
+        boton.textContent = 'Borrar';
+      }, MS_CONFIRMAR_BORRADO);
+      return;
+    }
+    borrarConversacion(id);
+  }
+
+  async function borrarConversacion(id) {
+    try {
+      await fetch(`/api/chat/conversaciones/${id}`, { method: 'DELETE' });
+    } catch (error) {
+      /* si falla, la lista se vuelve a pedir igual y sigue apareciendo */
+    }
+    if (estado.chatId === id) {
+      estado.chatId = null;
+      nuevaConversacion();
+    }
+    cargarHistoricoChat();
+  }
+
+  function nuevaConversacion() {
+    if (estado.chatEnCurso) return;
+    estado.chatId = null;
+    el.chatMensajes.innerHTML = '';
     agregarMensaje(
-      activo
-        ? 'Puedo explicarte los valores de tus documentos: qué significa cada uno, ' +
-            'cuál está fuera de rango y de qué norma sale ese rango. No doy ' +
-            'diagnósticos ni tratamientos.'
-        : ERRORES_CHAT.sin_clave,
+      estado.config?.asistente?.activo ? SALUDO_CHAT : ERRORES_CHAT.sin_clave,
       'asistente',
     );
+    el.chatHistorico.classList.add('oculto');
+    pintarHistoricoChat();
+  }
+
+  // Al entrar se reabre la última conversación: es lo que se espera de un
+  // historial. Si no hay ninguna, saluda.
+  async function abrirAsistente() {
+    await cargarHistoricoChat();
+    if (el.chatMensajes.childElementCount > 0) return;
+    const ultima = (estado.chatConversaciones || [])[0];
+    if (ultima) await abrirConversacion(ultima.id);
+    else nuevaConversacion();
   }
 
   // ======================================================================
@@ -1621,9 +1944,36 @@
       irA(irBoton.dataset.ir);
       return;
     }
+    const borrarPulsado = evento.target.closest('[data-borrar]');
+    if (borrarPulsado) {
+      evento.stopPropagation();
+      borrarDocumento(borrarPulsado.dataset.borrar, borrarPulsado, icono('borrar'));
+      return;
+    }
+    // Un toque en cualquier otro sitio desarma la confirmacion pendiente.
+    if (estado.confirmandoBorrado && !evento.target.closest('#btn-borrar-documento')) {
+      desarmarConfirmacion();
+    }
+    const perfilPulsado = evento.target.closest('[data-perfil]');
+    if (perfilPulsado) {
+      activarPerfil(perfilPulsado.dataset.perfil);
+      return;
+    }
     const tarjetaGrupoPulsada = evento.target.closest('[data-grupo]');
     if (tarjetaGrupoPulsada) {
       abrirDetalle(tarjetaGrupoPulsada.dataset.grupo);
+      return;
+    }
+    // El botón de borrar va antes que la tarjeta: está dentro de ella.
+    const botonBorrar = evento.target.closest('[data-borrar-conversacion]');
+    if (botonBorrar) {
+      evento.stopPropagation();
+      pedirBorrarConversacion(botonBorrar, botonBorrar.dataset.borrarConversacion);
+      return;
+    }
+    const conversacionPulsada = evento.target.closest('[data-conversacion]');
+    if (conversacionPulsada) {
+      abrirConversacion(conversacionPulsada.dataset.conversacion);
       return;
     }
     const tarjeta = evento.target.closest('[data-documento]');
@@ -1636,10 +1986,28 @@
   el.btnPerfil.addEventListener('click', () => irA('usuario'));
   el.btnAtras.addEventListener('click', () => irA(estado.vistaPrevia || 'inicio'));
   el.btnGuardarUsuario.addEventListener('click', guardarUsuario);
+  el.btnBorrarDocumento.addEventListener('click', () => {
+    if (!estado.capturaActual) return;
+    borrarDocumento(
+      estado.capturaActual,
+      el.btnBorrarDocumento,
+      `${icono('borrar')} Toca de nuevo para eliminar`,
+    );
+  });
+  el.btnNuevoPerfil.addEventListener('click', entrarEnCreacion);
+  el.btnCancelarPerfil.addEventListener('click', () => {
+    salirDeCreacion();
+    cargarUsuario();
+  });
   el.inpDistrito.addEventListener('input', sugerirDistritos);
   el.btnCapturar.addEventListener('click', capturar);
   el.btnDiagnostico.addEventListener('click', guardarDiagnostico);
   el.btnEnviarChat.addEventListener('click', enviarChat);
+  el.btnChatNuevo.addEventListener('click', nuevaConversacion);
+  el.btnChatHistorico.addEventListener('click', () => {
+    el.chatHistorico.classList.toggle('oculto');
+    if (!el.chatHistorico.classList.contains('oculto')) cargarHistoricoChat();
+  });
   el.chatEntrada.addEventListener('keydown', (evento) => {
     if (evento.key === 'Enter' && !evento.shiftKey) {
       evento.preventDefault();

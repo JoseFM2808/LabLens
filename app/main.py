@@ -8,7 +8,7 @@ import traceback
 from datetime import datetime
 
 from fastapi import Body, FastAPI, File, Form, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import (
@@ -18,11 +18,14 @@ from . import (
     asistente,
     basedatos,
     comparativa,
+    conversaciones,
     detector,
     enderezar,
     extraccion,
     formatos,
+    informe_pdf,
     integraciones,
+    perfiles,
     referencia,
     repositorio,
 )
@@ -34,6 +37,8 @@ almacenamiento.asegurar_directorios()
 repositorio.asegurar_directorios()
 # Crea datos/qhali.sqlite3 con todas las tablas si aun no existe. Idempotente.
 basedatos.inicializar()
+# Agrega la columna `etiqueta` de los perfiles si falta. Idempotente.
+perfiles.asegurar_esquema()
 
 app = FastAPI(title="LabLens", version=__version__)
 
@@ -111,6 +116,60 @@ def api_usuario_guardar(
     return JSONResponse({"ok": True, "usuario": usuario})
 
 
+@app.get("/api/perfiles")
+def api_perfiles() -> dict:
+    """Perfiles locales con su etiqueta, demografia y cuantos documentos tienen.
+
+    La etiqueta es un nombre para distinguir perfiles en este dispositivo, no la
+    identidad del paciente: no entra en ninguna consulta clinica ni en el PDF.
+    """
+    return {"perfiles": perfiles.listar(), "activo": perfiles.id_activo()}
+
+
+@app.post("/api/perfiles")
+def api_perfil_crear(
+    etiqueta: str = Form(...),
+    fecha_nacimiento: str = Form(...),
+    sexo: str = Form(...),
+    condicion: str = Form("general"),
+    distrito_residencia: str = Form(""),
+    residencia_desde: str = Form(""),
+) -> JSONResponse:
+    """Crea un perfil nuevo, vacio de documentos, y lo deja activo.
+
+    La demografia es obligatoria porque de ella dependen los rangos de
+    referencia: un rango elegido con la edad o el sexo equivocados da una alerta
+    falsa o esconde una real.
+    """
+    try:
+        perfil = perfiles.crear(
+            etiqueta=etiqueta.strip(),
+            fecha_nacimiento=fecha_nacimiento.strip(),
+            sexo=sexo.strip(),
+            condicion=condicion.strip() or "general",
+            distrito_residencia=distrito_residencia.strip() or None,
+            residencia_desde=residencia_desde.strip() or None,
+        )
+    except ValueError as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
+    return JSONResponse({"ok": True, "perfil": perfil})
+
+
+@app.post("/api/perfiles/{perfil_id}/activar")
+def api_perfil_activar(perfil_id: str) -> JSONResponse:
+    """Cambia el perfil en uso. Todo lo demas (analisis, historial) lo sigue."""
+    if not perfiles.activar(perfil_id):
+        return JSONResponse({"ok": False, "error": "el perfil no existe"}, status_code=404)
+    return JSONResponse({"ok": True, "activo": perfil_id})
+
+
+@app.post("/api/perfiles/{perfil_id}/etiqueta")
+def api_perfil_renombrar(perfil_id: str, etiqueta: str = Form(...)) -> JSONResponse:
+    if not perfiles.renombrar(perfil_id, etiqueta):
+        return JSONResponse({"ok": False, "error": "el perfil no existe"}, status_code=404)
+    return JSONResponse({"ok": True})
+
+
 @app.post("/api/chat")
 def api_chat(cuerpo: dict = Body(...)) -> JSONResponse:
     """Asistente: explica lo que ya esta en la base. Misma clave que la extraccion.
@@ -136,19 +195,21 @@ def api_chat(cuerpo: dict = Body(...)) -> JSONResponse:
 def api_chat_flujo(cuerpo: dict = Body(...)) -> StreamingResponse:
     """Igual que `/api/chat`, pero devuelve la respuesta en flujo (SSE).
 
+    Cuerpo JSON: ``{"mensaje": "...", "conversacion_id": "..."}``. Sin
+    `conversacion_id` se abre una conversacion nueva y el primer evento la informa.
+
     Es la ruta que usa la interfaz. El servicio tarda entre 4 y 44 segundos en una
     respuesta completa; en flujo la primera frase aparece en un par de segundos.
 
-    Cada evento es una linea ``data: {json}``. `tipo` puede ser `trozo` (texto
-    parcial), `fin` (con el tiempo y el modelo) o `error`.
+    Cada evento es una linea ``data: {json}``. `tipo` puede ser `inicio` (trae el
+    `conversacion_id`), `trozo` (texto parcial), `fin` (con el tiempo y el modelo)
+    o `error`. La pregunta y la respuesta quedan guardadas en el historico.
     """
     mensaje = str(cuerpo.get("mensaje") or "").strip()
-    historial = cuerpo.get("historial") or []
-    if not isinstance(historial, list):
-        historial = []
+    conversacion_id = cuerpo.get("conversacion_id") or None
 
     def eventos():
-        for evento in asistente.responder_en_flujo(mensaje, historial):
+        for evento in asistente.conversar(mensaje, conversacion_id):
             yield f"data: {json.dumps(evento, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
@@ -157,6 +218,31 @@ def api_chat_flujo(cuerpo: dict = Body(...)) -> StreamingResponse:
         # Sin buffer intermedio: si un proxy acumula, el flujo pierde el sentido.
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@app.get("/api/chat/conversaciones")
+def api_conversaciones() -> dict:
+    """Historico del asistente: conversaciones de la mas reciente a la mas vieja."""
+    return {"conversaciones": conversaciones.listar()}
+
+
+@app.get("/api/chat/conversaciones/{conversacion_id}")
+def api_conversacion(conversacion_id: str) -> JSONResponse:
+    """Mensajes de una conversacion guardada."""
+    if not conversaciones.existe(conversacion_id):
+        return JSONResponse({"ok": False, "error": "no existe"}, status_code=404)
+    return JSONResponse(
+        {"ok": True, "conversacion_id": conversacion_id,
+         "mensajes": conversaciones.mensajes(conversacion_id)}
+    )
+
+
+@app.delete("/api/chat/conversaciones/{conversacion_id}")
+def api_borrar_conversacion(conversacion_id: str) -> JSONResponse:
+    """Elimina una conversacion y sus mensajes. Lo pide la persona desde la pantalla."""
+    if not conversaciones.borrar(conversacion_id):
+        return JSONResponse({"ok": False, "error": "no existe"}, status_code=404)
+    return JSONResponse({"ok": True, "borrada": conversacion_id})
 
 
 @app.get("/api/chat/contexto")
@@ -199,6 +285,52 @@ def api_analisis() -> dict:
     `sin_referencia`.
     """
     return comparativa.analisis_usuario()
+
+
+@app.get("/api/capturas/{captura_id}/pdf")
+def api_pdf(captura_id: str) -> Response:
+    """Informe en PDF con los datos extraidos del documento.
+
+    Es lo que baja el boton "Descargar": los valores, su rango de referencia y
+    el estado de cada uno, no la foto. La imagen enderezada sigue disponible en
+    `/capturas/<archivo>` para quien la necesite.
+    """
+    informe = repositorio.obtener(captura_id)
+    if informe is None:
+        return JSONResponse(
+            {"ok": False, "error": "no hay lectura guardada para ese documento"},
+            status_code=404,
+        )
+    try:
+        contenido = informe_pdf.construir(informe)
+    except Exception as error:  # noqa: BLE001
+        traceback.print_exc()
+        return JSONResponse(
+            {"ok": False, "error": f"no se pudo generar el PDF: {error}"}, status_code=500
+        )
+    return Response(
+        content=contenido,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{informe_pdf.nombre_archivo(informe)}"'
+        },
+    )
+
+
+@app.delete("/api/documentos/{documento_id}")
+def api_borrar_documento(documento_id: str) -> JSONResponse:
+    """Elimina un documento: sus filas en la base y sus archivos en disco.
+
+    Es irreversible. La interfaz pide confirmacion antes de llamar aqui.
+    """
+    try:
+        resultado = repositorio.borrar_documento(documento_id)
+    except ValueError as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=404)
+    except Exception as error:  # noqa: BLE001
+        traceback.print_exc()
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=500)
+    return JSONResponse({"ok": True, **resultado})
 
 
 @app.get("/api/documentos/{documento_id}/valores")

@@ -342,6 +342,35 @@ h1, h2, h3 { margin: 0; }
 .btn-secundario { background: var(--secondary-container); color: var(--on-secondary-container); }
 .btn-crema { background: var(--crema); color: var(--on-surface); border: 1px solid var(--outline-variant); }
 .btn-plano { background: transparent; color: var(--primary); box-shadow: none; }
+.btn-peligro { background: var(--error-container); color: var(--on-error-container); }
+/* Segundo toque de una accion irreversible: cambia de color para que se note
+ * que el siguiente toque ya borra. */
+.btn-peligro.confirmando { background: var(--error); color: var(--on-error); }
+
+/* Fila del historial con su boton de borrar al lado. La fila es un boton y el
+ * de borrar es otro: no pueden ir anidados, asi que van como hermanos. */
+.fila-documento { display: flex; align-items: stretch; gap: var(--e-base); }
+.fila-documento .tarjeta-lista { flex: 1; min-width: 0; }
+.btn-borrar-fila {
+  appearance: none;
+  border: 1px solid var(--outline-variant);
+  background: var(--surface-container-lowest);
+  color: var(--on-surface-variant);
+  border-radius: var(--r-lg);
+  width: 48px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: var(--sombra-1);
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.btn-borrar-fila svg { width: 20px; height: 20px; }
+.btn-borrar-fila.confirmando {
+  background: var(--error);
+  border-color: var(--error);
+  color: var(--on-error);
+}
 
 /* Par de acciones rápidas del dashboard. El texto es largo y en 360 px no cabe
  * en una línea, así que se permite el salto y se ajusta la altura al contenido

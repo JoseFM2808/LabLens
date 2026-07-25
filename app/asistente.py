@@ -6,7 +6,7 @@ Usa exactamente la misma credencial y el mismo servicio que la extraccion
 extraccion esta activa, el asistente tambien.
 
     LABLENS_MODELO_CHAT       id del modelo; por defecto el mismo de la vision
-    LABLENS_CHAT_TIEMPO_LIMITE  segundos por intento; por defecto 60
+    LABLENS_CHAT_TIEMPO_LIMITE  segundos por intento; por defecto 90
     LABLENS_CHAT_MAX_TOKENS   tope de tokens de salida; por defecto 700
     LABLENS_CHAT_TURNOS       turnos de historial que se reenvian; por defecto 6
 
@@ -27,6 +27,13 @@ Por eso el ajuste por altitud llega ya aplicado en el campo `evaluado`: pedirle 
 modelo que reste 2.9 a una hemoglobina seria darle una tarea de calculo clinico, y
 un modelo de lenguaje no es el lugar para eso.
 
+Historico
+---------
+Las conversaciones se guardan en la base (`app/conversaciones.py`), asi que
+sobreviven a recargar la pagina. `conversar` es la funcion que las persiste;
+`responder_en_flujo` y `responder` no escriben nada y sirven para probar sin dejar
+rastro. El historial que se le manda al modelo se lee de la base, no del navegador.
+
 Lo que el asistente no hace
 ---------------------------
 No diagnostica, no descarta enfermedades, no recomienda tratamientos ni dosis. La
@@ -43,8 +50,8 @@ from collections.abc import Iterator
 
 import requests
 
-from . import basedatos, comparativa, credenciales, extraccion, referencia
-from .repositorio import ID_USUARIO_LOCAL
+from . import basedatos, comparativa, conversaciones, credenciales, extraccion, referencia
+from . import perfiles
 
 INTENTOS = 2
 ESPERA_ENTRE_INTENTOS = 2.0
@@ -143,7 +150,22 @@ def _alertas(conexion, usuario_id: str) -> list[str]:
     ]
 
 
+MAXIMO_DOCUMENTOS = 10
+
+
 def _documentos(conexion, usuario_id: str) -> list[str]:
+    """Documentos del usuario, los mas recientes primero.
+
+    Se listan los ultimos 10, pero la primera linea dice el total. Sin ese total,
+    el modelo leia diez lineas y respondia "tienes 10 documentos" cuando habia
+    dieciocho: un recorte silencioso se convierte en una cifra falsa.
+    """
+    total = conexion.execute(
+        "SELECT COUNT(*) AS n FROM documento WHERE usuario_id = ?", (usuario_id,)
+    ).fetchone()["n"]
+    if total == 0:
+        return []
+
     filas = conexion.execute(
         """
         SELECT d.tipo, d.fecha_documento, d.fecha_carga, d.institucion_nombre,
@@ -154,18 +176,22 @@ def _documentos(conexion, usuario_id: str) -> list[str]:
          WHERE d.usuario_id = ?
          GROUP BY d.id
          ORDER BY COALESCE(d.fecha_documento, d.fecha_carga) DESC
-         LIMIT 10
+         LIMIT ?
         """,
-        (usuario_id,),
+        (usuario_id, MAXIMO_DOCUMENTOS),
     ).fetchall()
-    return [
+
+    encabezado = f"- total de documentos guardados: {total}"
+    if total > len(filas):
+        encabezado += f" (abajo solo los {len(filas)} mas recientes)"
+    return [encabezado] + [
         f"- {(f['fecha_documento'] or str(f['fecha_carga'])[:10])} · {f['tipo']} · "
         f"{f['institucion_nombre'] or 'institucion no identificada'} · {f['valores']} valores"
         for f in filas
     ]
 
 
-def contexto(usuario_id: str = ID_USUARIO_LOCAL) -> str:
+def contexto(usuario_id: str | None = None) -> str:
     """Todo lo que la app sabe del usuario, en texto plano y sin interpretar.
 
     Se arma con `comparativa.analisis_usuario`, que es la misma consulta que
@@ -283,7 +309,7 @@ def _mensajes(pregunta: str, historial: list[dict], bloque: str) -> list[dict]:
     cada mensaje: si el usuario acaba de escanear un documento, la siguiente
     respuesta tiene que usar los valores nuevos.
     """
-    turnos = int(_entorno("LABLENS_CHAT_TURNOS", "6"))
+    turnos = turnos_de_historial()
     mensajes = [{"role": "system", "content": INSTRUCCIONES}]
     for turno in historial[-turnos:]:
         texto = (turno.get("texto") or "").strip()
@@ -295,8 +321,11 @@ def _mensajes(pregunta: str, historial: list[dict], bloque: str) -> list[dict]:
     return mensajes
 
 
-def _preparar(pregunta: str, historial: list[dict] | None, usuario_id: str) -> tuple:
-    """Deja listo (url, cabeceras, cuerpo, contexto) o devuelve el error a mostrar."""
+def _preparar(pregunta: str, historial: list[dict] | None, usuario_id: str | None) -> tuple:
+    """Deja listo (url, cabeceras, cuerpo, contexto) o devuelve el error a mostrar.
+
+    `usuario_id` en None significa el perfil activo; `contexto` lo resuelve.
+    """
     clave = extraccion.clave_api()
     if not clave:
         return None, {
@@ -327,7 +356,7 @@ def _preparar(pregunta: str, historial: list[dict] | None, usuario_id: str) -> t
 
 
 def responder_en_flujo(
-    pregunta: str, historial: list[dict] | None = None, usuario_id: str = ID_USUARIO_LOCAL
+    pregunta: str, historial: list[dict] | None = None, usuario_id: str | None = None
 ) -> Iterator[dict]:
     """Igual que `responder`, pero va entregando la respuesta por trozos.
 
@@ -341,9 +370,12 @@ def responder_en_flujo(
     Emite diccionarios: ``{"tipo": "trozo", "texto": ...}``, luego
     ``{"tipo": "fin", ...}``, o ``{"tipo": "error", ...}``.
 
-    **Sin reintentos**, a diferencia de `responder`: si el flujo se corta a medias,
-    reintentar duplicaria el texto ya mostrado. Un corte se reporta como error y la
-    persona vuelve a preguntar.
+    Los reintentos van **solo antes del primer trozo**. La latencia del servicio es
+    muy dispersa y a veces corta la conexion sin devolver nada; reintentar ahi es
+    gratis porque la pantalla todavia no mostro texto. Una vez que empezo a salir
+    texto no se reintenta nunca: repetir el pedido duplicaria lo ya escrito, asi
+    que un corte a medias se reporta como `flujo_cortado` y la persona pregunta de
+    nuevo.
     """
     pregunta = (pregunta or "").strip()
     if not pregunta:
@@ -357,73 +389,155 @@ def responder_en_flujo(
 
     url, cabeceras, cuerpo, bloque = preparado
     cuerpo = {**cuerpo, "stream": True}
+    tiempo_limite = float(_entorno("LABLENS_CHAT_TIEMPO_LIMITE", "90"))
     arranque = time.perf_counter()
-    trozos = 0
+    ultimo_error: dict | None = None
 
-    try:
-        respuesta = requests.post(
-            url,
-            headers=cabeceras,
-            json=cuerpo,
-            timeout=float(_entorno("LABLENS_CHAT_TIEMPO_LIMITE", "60")),
-            stream=True,
-        )
-    except requests.RequestException as fallo:
-        yield {
-            "tipo": "error",
-            "estado": "error_red",
-            "error": f"{type(fallo).__name__}: {fallo}",
-        }
-        return
+    for intento in range(1, INTENTOS + 1):
+        trozos = 0
+        try:
+            respuesta = requests.post(
+                url, headers=cabeceras, json=cuerpo, timeout=tiempo_limite, stream=True
+            )
+        except requests.RequestException as fallo:
+            ultimo_error = {"estado": "error_red", "error": f"{type(fallo).__name__}: {fallo}"}
+            time.sleep(ESPERA_ENTRE_INTENTOS)
+            continue
 
-    with respuesta:
-        if respuesta.status_code != 200:
+        with respuesta:
+            if respuesta.status_code != 200:
+                ultimo_error = {
+                    "estado": "error_api",
+                    "codigo": respuesta.status_code,
+                    "error": respuesta.text[:400],
+                }
+                # Un 4xx no se arregla reintentando, salvo el 429 de limite de uso.
+                if 400 <= respuesta.status_code < 500 and respuesta.status_code != 429:
+                    break
+                time.sleep(ESPERA_ENTRE_INTENTOS)
+                continue
+
+            try:
+                # Protocolo SSE del endpoint compatible con OpenAI: lineas
+                # 'data: {...}' y una final 'data: [DONE]'.
+                for linea in respuesta.iter_lines(decode_unicode=True):
+                    if not linea or not linea.startswith("data:"):
+                        continue
+                    carga = linea[5:].strip()
+                    if carga == "[DONE]":
+                        break
+                    try:
+                        trozo = json.loads(carga)
+                    except ValueError:
+                        continue  # una linea ilegible no invalida el resto del flujo
+                    texto = (trozo.get("choices") or [{}])[0].get("delta", {}).get("content")
+                    if texto:
+                        trozos += 1
+                        yield {"tipo": "trozo", "texto": texto}
+            except requests.RequestException as fallo:
+                if trozos:  # ya se mostro texto: no se reintenta
+                    yield {
+                        "tipo": "error",
+                        "estado": "flujo_cortado",
+                        "error": f"{type(fallo).__name__}: {fallo}",
+                    }
+                    return
+                ultimo_error = {"estado": "error_red", "error": f"{type(fallo).__name__}: {fallo}"}
+                time.sleep(ESPERA_ENTRE_INTENTOS)
+                continue
+
+        if trozos:
             yield {
-                "tipo": "error",
-                "estado": "error_api",
-                "codigo": respuesta.status_code,
-                "error": respuesta.text[:400],
+                "tipo": "fin",
+                "estado": "ok",
+                "modelo": cuerpo["model"],
+                "intentos": intento,
+                "ms_respuesta": int((time.perf_counter() - arranque) * 1000),
+                "caracteres_contexto": len(bloque),
             }
             return
 
-        # Protocolo SSE del endpoint compatible con OpenAI: lineas 'data: {...}'
-        # y una final 'data: [DONE]'.
-        for linea in respuesta.iter_lines(decode_unicode=True):
-            if not linea or not linea.startswith("data:"):
-                continue
-            carga = linea[5:].strip()
-            if carga == "[DONE]":
-                break
-            try:
-                trozo = json.loads(carga)
-            except ValueError:
-                continue  # una linea ilegible no invalida el resto del flujo
-            texto = (trozo.get("choices") or [{}])[0].get("delta", {}).get("content")
-            if texto:
-                trozos += 1
-                yield {"tipo": "trozo", "texto": texto}
-
-    ms = int((time.perf_counter() - arranque) * 1000)
-    if trozos == 0:
-        yield {
-            "tipo": "error",
-            "estado": "error_respuesta",
-            "error": "el servicio no devolvio texto",
-            "ms_respuesta": ms,
-        }
-        return
+        ultimo_error = {"estado": "error_respuesta", "error": "el servicio no devolvio texto"}
+        time.sleep(ESPERA_ENTRE_INTENTOS)
 
     yield {
-        "tipo": "fin",
-        "estado": "ok",
-        "modelo": modelo(),
-        "ms_respuesta": ms,
-        "caracteres_contexto": len(bloque),
+        "tipo": "error",
+        **(ultimo_error or {"estado": "error_red"}),
+        "intentos": INTENTOS,
+        "ms_respuesta": int((time.perf_counter() - arranque) * 1000),
     }
 
 
+def turnos_de_historial() -> int:
+    return int(_entorno("LABLENS_CHAT_TURNOS", "6"))
+
+
+def conversar(
+    pregunta: str,
+    conversacion_id: str | None = None,
+    usuario_id: str | None = None,
+) -> Iterator[dict]:
+    """`responder_en_flujo` mas el historico: guarda la pregunta y la respuesta.
+
+    Es la puerta que usa la interfaz. Separada de `responder_en_flujo` a proposito:
+    esa funcion solo habla con el servicio y no sabe nada de la base, asi que se
+    puede probar sin escribir nada.
+
+    El historial que se le manda al modelo se lee de la base, **no** de lo que
+    manda el navegador: la fuente de verdad de una conversacion guardada es la
+    base. Y se lee antes de guardar la pregunta nueva, porque si no la pregunta
+    viajaria dos veces (una en el historial y otra como pregunta).
+
+    El primer evento es ``{"tipo": "inicio", "conversacion_id": ...}``, para que la
+    interfaz sepa a que conversacion pegar la respuesta incluso si era nueva.
+    """
+    pregunta = (pregunta or "").strip()
+    if not pregunta:
+        yield {"tipo": "error", "estado": "sin_pregunta", "mensaje": "Escribe una pregunta."}
+        return
+
+    # Un id que ya no existe (la borraron en otra pestana) no debe hacer fallar la
+    # pregunta: se abre una conversacion nueva.
+    if not conversaciones.existe(conversacion_id):
+        conversacion_id = None
+    nueva = conversacion_id is None
+    if nueva:
+        conversacion_id = conversaciones.crear(usuario_id, pregunta)
+
+    yield {"tipo": "inicio", "conversacion_id": conversacion_id, "nueva": nueva}
+
+    historial = conversaciones.historial_para_modelo(conversacion_id, turnos_de_historial())
+    conversaciones.guardar_mensaje(conversacion_id, "usuario", pregunta)
+
+    partes: list[str] = []
+    for evento in responder_en_flujo(pregunta, historial, usuario_id):
+        if evento["tipo"] == "trozo":
+            partes.append(evento["texto"])
+        elif evento["tipo"] == "fin":
+            conversaciones.guardar_mensaje(
+                conversacion_id,
+                "asistente",
+                "".join(partes),
+                estado="ok",
+                modelo=evento.get("modelo"),
+                ms_respuesta=evento.get("ms_respuesta"),
+            )
+        elif evento["tipo"] == "error":
+            # Se guarda lo que se alcanzo a mostrar, o el aviso si no hubo nada.
+            # Queda con `estado` distinto de 'ok', asi que se ve en el historico
+            # pero no vuelve a entrar al contexto del modelo.
+            conversaciones.guardar_mensaje(
+                conversacion_id,
+                "asistente",
+                "".join(partes) or evento.get("mensaje") or evento.get("error") or "sin respuesta",
+                estado=evento.get("estado") or "error",
+                ms_respuesta=evento.get("ms_respuesta"),
+            )
+        yield {**evento, "conversacion_id": conversacion_id}
+
+
 def responder(
-    pregunta: str, historial: list[dict] | None = None, usuario_id: str = ID_USUARIO_LOCAL
+    pregunta: str, historial: list[dict] | None = None, usuario_id: str | None = None
 ) -> dict:
     """Responde la pregunta usando solo el contexto de la base.
 
@@ -439,7 +553,7 @@ def responder(
         return error
 
     url, cabeceras, cuerpo, bloque = preparado
-    tiempo_limite = float(_entorno("LABLENS_CHAT_TIEMPO_LIMITE", "60"))
+    tiempo_limite = float(_entorno("LABLENS_CHAT_TIEMPO_LIMITE", "90"))
     nombre_modelo = cuerpo["model"]
 
     ultimo_error = None

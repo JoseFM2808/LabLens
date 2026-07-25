@@ -166,6 +166,81 @@ auditoria y no entra a la base.
 El paso 3 tarda entre 5 y 30 segundos, asi que corre en segundo plano: la captura
 responde al instante y la pantalla de resultado se actualiza sola.
 
+## Asistente (chat)
+
+La pantalla **Asistente** explica en palabras los valores que ya estan en la base.
+Usa **la misma clave y el mismo servicio** que la extraccion: si esta activa una,
+esta activa el otro. No hay una segunda credencial que administrar.
+
+| Variable | Por defecto | Para que |
+|---|---|---|
+| `LABLENS_MODELO_CHAT` | el mismo de la vision | Id del modelo del chat. |
+| `LABLENS_CHAT_TIEMPO_LIMITE` | `90` | Segundos por intento. |
+| `LABLENS_CHAT_MAX_TOKENS` | `700` | Tope de tokens de la respuesta. |
+| `LABLENS_CHAT_TURNOS` | `6` | Turnos de historial que se reenvian. |
+
+### El modelo no consulta la base
+
+Es la regla 2 del documento de diseno: *el modelo es capa de extraccion, no de
+respuesta*. El servidor arma el contexto con SQL (la misma consulta que alimenta
+la pantalla Analisis, asi que el chat no puede contradecir lo que se ve ahi) y se
+lo entrega como datos. El modelo solo lo pone en palabras.
+
+El contexto lleva: perfil (edad, sexo, condicion, distrito y altitud), el ultimo
+valor de cada biomarcador con su valor ajustado, su rango, su fuente y si esa
+fuente tiene cita, las alertas que disparan sus valores, los documentos guardados
+y los establecimientos de su distrito. El ajuste por altitud va **ya aplicado**:
+pedirle al modelo que reste 2.9 a una hemoglobina seria darle un calculo clinico.
+
+Se puede auditar sin gastar tokens:
+
+```powershell
+curl.exe -k https://localhost:8443/api/chat/contexto
+```
+
+### Lo que el asistente no hace
+
+No diagnostica, no descarta enfermedades y no indica tratamientos ni dosis. Ante
+un valor fuera de rango explica el dato y deriva a un profesional, nombrando los
+establecimientos del distrito que trae el contexto. Si le preguntan algo que no
+esta en la base, responde que no esta en sus documentos.
+
+### Historico de conversaciones
+
+Las conversaciones se guardan en la base, en dos tablas propias de la app
+(`conversacion` y `mensaje_chat`), asi que sobreviven a recargar la pagina. La
+pantalla abre la ultima al entrar, permite abrir cualquiera del historial, empezar
+una nueva y borrar las que sobren (dos toques, para no borrar por error).
+
+Cada conversacion pertenece al **perfil activo**: cambiar de perfil muestra su
+propio historial, igual que sus documentos. Al borrar un perfil se borran tambien
+sus conversaciones.
+
+El historial que se le manda al modelo se lee de la base, no del navegador, y deja
+fuera las respuestas que fallaron: un "no se pudo llegar al servicio" se guarda
+para poder auditarlo, se muestra atenuado en pantalla, y no entra al contexto.
+
+> **Aviso de privacidad.** Es lo unico en toda la base que guarda texto libre
+> escrito por la persona, asi que es lo unico que puede contener PII. El diseno
+> dice "cero PII" y esta es la excepcion consciente: el archivo es local, de un
+> solo dispositivo, la Fase 2 lo cifra completo con SQLCipher, y cada conversacion
+> se puede borrar desde la pantalla. Ver `app/conversaciones.py`.
+
+| Endpoint | Uso |
+|---|---|
+| `POST /api/chat/flujo` | Respuesta en flujo (SSE). Es la que usa la interfaz. |
+| `POST /api/chat` | La misma respuesta, completa de una vez. |
+| `GET /api/chat/contexto` | El contexto exacto que se le manda al modelo. |
+| `GET /api/chat/conversaciones` | Historico del perfil activo. |
+| `GET /api/chat/conversaciones/<id>` | Mensajes de una conversacion. |
+| `DELETE /api/chat/conversaciones/<id>` | Borra una conversacion y sus mensajes. |
+
+La interfaz usa el flujo porque la latencia del servicio va de 4 a 44 segundos:
+con la respuesta completa el chat se queda medio minuto en blanco, en flujo la
+primera frase aparece en un par de segundos. Los reintentos ocurren **solo antes
+del primer trozo**; despues no, porque repetir el pedido duplicaria el texto ya
+escrito en pantalla.
+
 ## Base de datos
 
 Una sola SQLite local en `datos/qhali.sqlite3`, 19 tablas y una vista en tres

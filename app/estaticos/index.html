@@ -110,6 +110,11 @@
               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="9" /><path d="M12 11v5.5" /><path d="M12 7.8h.01" />
       </symbol>
+      <symbol id="i-borrar" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 7h16" /><path d="M9.5 7V4.5h5V7" />
+        <path d="M6 7l1 12.5h10L18 7" /><path d="M10.5 11v5" /><path d="M13.5 11v5" />
+      </symbol>
     </defs>
   </svg>
 
@@ -282,12 +287,19 @@
           <tbody></tbody>
         </table>
       </div>
-      <div id="acciones-documento" class="oculto" style="display: flex; gap: 12px">
+      <div id="acciones-documento" class="oculto" style="display: flex; gap: 12px; flex-wrap: wrap">
         <button class="btn btn-primario" data-ir="escanear">Nueva captura</button>
-        <a id="enlace-descarga" class="btn btn-secundario" download>
-          <svg><use href="#i-descargar" /></svg> Descargar
+        <a id="enlace-descarga" class="btn btn-secundario">
+          <svg><use href="#i-descargar" /></svg> Descargar PDF
         </a>
+        <a id="enlace-imagen" class="btn btn-crema oculto" download>
+          <svg><use href="#i-documento" /></svg> Imagen escaneada
+        </a>
+        <button id="btn-borrar-documento" class="btn btn-peligro">
+          <svg><use href="#i-borrar" /></svg> Eliminar
+        </button>
       </div>
+      <p id="estado-borrado" class="estado"></p>
       <details id="detalle-json" class="oculto">
         <summary>Ver respuesta completa</summary>
         <pre id="json-resultado" class="crudo"></pre>
@@ -303,10 +315,25 @@
       <h1 class="headline-lg">Asistente LabLens</h1>
       <div class="tarjeta-crema">
         <p class="body-md">
-          Esta pantalla todavía no tiene diseño en Stitch, solo un mockup. La sesión
-          no se guarda: al salir y volver, la conversación empieza de cero.
+          Esta pantalla todavía no tiene diseño en Stitch, solo un mockup. Las
+          conversaciones sí se guardan: al volver, sigues donde estabas.
         </p>
       </div>
+
+      <!-- `width: auto` porque .btn ocupa el 100% por defecto y aquí van en fila. -->
+      <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
+        <button id="btn-chat-nuevo" class="btn btn-crema" style="width: auto">
+          Nueva conversación
+        </button>
+        <button id="btn-chat-historico" class="btn btn-plano" style="width: auto">
+          Ver historial
+        </button>
+        <span id="chat-titulo" class="label-sm suave"
+              style="margin-left: auto; text-align: right"></span>
+      </div>
+
+      <div id="chat-historico" class="lista oculto"></div>
+
       <div id="chat-mensajes" style="display: flex; flex-direction: column; gap: 12px"></div>
       <div style="display: flex; gap: 8px; align-items: flex-end">
         <textarea id="chat-entrada" rows="2" placeholder="Escribe tu pregunta..."
@@ -325,7 +352,16 @@
 
     <!-- ================= USUARIO ================= -->
     <section id="v-usuario" class="vista">
-      <h1 class="headline-lg">Usuario local</h1>
+      <h1 class="headline-lg">Perfil</h1>
+
+      <div class="seccion">
+        <h2 class="headline-sm">Perfiles en este equipo</h2>
+        <div id="lista-perfiles" class="lista-apretada"></div>
+        <button id="btn-nuevo-perfil" class="btn btn-crema">Crear perfil nuevo</button>
+      </div>
+
+      <div class="seccion" id="bloque-datos-perfil">
+        <h2 class="headline-sm" id="titulo-datos-perfil">Datos del perfil activo</h2>
       <div class="tarjeta">
         <p class="body-md suave">
           La base de datos no guarda nombres. Se piden la fecha de nacimiento y el
@@ -335,6 +371,8 @@
         </p>
       </div>
       <div class="rejilla-campos">
+        <label class="campo oculto" id="campo-etiqueta"><span>Nombre del perfil</span>
+          <input type="text" id="inp-etiqueta" placeholder="Ej. Kiara" /></label>
         <label class="campo"><span>Fecha de nacimiento</span>
           <input type="date" id="inp-nacimiento" /></label>
         <label class="campo"><span>Sexo</span>
@@ -349,8 +387,13 @@
           <input type="date" id="inp-residencia-desde" /></label>
       </div>
       <p class="body-sm suave" id="pista-distrito"></p>
-      <button id="btn-guardar-usuario" class="btn btn-primario">Guardar</button>
+      <div style="display: flex; gap: 12px; flex-wrap: wrap">
+        <button id="btn-guardar-usuario" class="btn btn-primario">Guardar</button>
+        <button id="btn-cancelar-perfil" class="btn btn-crema oculto">Cancelar</button>
+      </div>
       <p id="estado-usuario" class="estado"></p>
+      </div>
+
       <dl id="meta-sistema" class="meta"></dl>
     </section>
   </main>

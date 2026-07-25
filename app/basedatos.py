@@ -280,6 +280,43 @@ CREATE TABLE IF NOT EXISTS codigo_cie10 (
 CREATE INDEX IF NOT EXISTS idx_distrito_nombre ON distrito (nombre);
 """
 
+# ==========================================================================
+# Historico del asistente. NO es parte del esquema validado por el equipo: son
+# tablas propias de la app y se declaran aparte para que eso quede a la vista.
+#
+# Advertencia de privacidad: es lo unico en toda la base que guarda texto libre
+# escrito por la persona, asi que es lo unico que puede contener PII. Ver la nota
+# completa en `app/conversaciones.py`.
+# ==========================================================================
+DDL_CHAT = """
+CREATE TABLE IF NOT EXISTS conversacion (
+    id             TEXT PRIMARY KEY,
+    -- Nulable: se puede preguntar antes de registrar el usuario local.
+    usuario_id     TEXT REFERENCES usuario(id),
+    titulo         TEXT NOT NULL,          -- primera pregunta, recortada
+    creada_en      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    actualizada_en DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS mensaje_chat (
+    id              TEXT PRIMARY KEY,
+    conversacion_id TEXT NOT NULL REFERENCES conversacion(id) ON DELETE CASCADE,
+    quien           TEXT NOT NULL,         -- 'usuario' | 'asistente'
+    texto           TEXT NOT NULL,
+    creado_en       DATETIME DEFAULT CURRENT_TIMESTAMP,
+    -- Solo en respuestas: 'ok' o el error del servicio. Lo que no es 'ok' se
+    -- muestra en pantalla pero no entra al contexto que se manda al modelo.
+    estado          TEXT,
+    modelo          TEXT,
+    ms_respuesta    INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS ix_mensaje_conversacion
+    ON mensaje_chat (conversacion_id, creado_en);
+CREATE INDEX IF NOT EXISTS ix_conversacion_usada
+    ON conversacion (actualizada_en DESC);
+"""
+
 # Indices que caen sobre columnas agregadas por COLUMNAS_NUEVAS: van despues de
 # los ALTER TABLE, no en el DDL de las tablas.
 INDICES_V1 = """
@@ -400,7 +437,15 @@ TABLAS_PENDIENTES = (
     "umbral_desviacion",  # de la v0.1; la v1.0 la reemplaza por umbral_alerta
 )
 
-TABLAS_ACTIVAS = ("usuario", "documento", "estudio", "valor_extraido", "biomarcador")
+TABLAS_ACTIVAS = (
+    "usuario",
+    "documento",
+    "estudio",
+    "valor_extraido",
+    "biomarcador",
+    "conversacion",
+    "mensaje_chat",
+)
 
 # Datos de referencia: los carga herramientas/cargar_referencia.py desde la base
 # validada por el equipo. Se listan para el reporte de estado.
@@ -477,6 +522,7 @@ def inicializar() -> Path:
     with conectar() as conexion:
         conexion.executescript(DDL)         # base v0.1
         conexion.executescript(DDL_V1)      # tablas nuevas de la v1.0
+        conexion.executescript(DDL_CHAT)    # historico del asistente (propio de la app)
         # Las columnas van despues de las dos tandas de tablas, porque hay
         # columnas que referencian tablas que recien crea DDL_V1
         # (`valor_extraido.ajuste_id` -> `ajuste_altitud`).

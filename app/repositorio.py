@@ -92,10 +92,16 @@ def asegurar_directorios() -> None:
 # ==========================================================================
 
 def usuario_local() -> dict | None:
-    """Devuelve el usuario local, o None si todavia no se configuro."""
+    """Devuelve el perfil activo, o None si todavia no se configuro ninguno.
+
+    Se llama "local" por historia: ahora puede haber varios perfiles en la misma
+    instalacion y este devuelve el que esta en uso (ver `app/perfiles.py`).
+    """
+    from . import perfiles  # import diferido: perfiles usa guardar_usuario
+
     with basedatos.conectar() as conexion:
         fila = conexion.execute(
-            "SELECT * FROM usuario WHERE id = ?", (ID_USUARIO_LOCAL,)
+            "SELECT * FROM usuario WHERE id = ?", (perfiles.id_activo(),)
         ).fetchone()
     return dict(fila) if fila else None
 
@@ -106,6 +112,7 @@ def guardar_usuario(
     distrito_residencia: str | None = None,
     condicion: str = "general",
     residencia_desde: str | None = None,
+    usuario_id: str | None = None,
 ) -> dict:
     """Crea o actualiza el usuario local.
 
@@ -118,6 +125,11 @@ def guardar_usuario(
     ajuste de la NTS 213. Si el texto no resuelve a un solo distrito, se levanta
     ValueError con los candidatos: es la persona la que elige, no el programa.
     """
+    from . import perfiles  # import diferido
+
+    # Sin `usuario_id` se edita el perfil activo; con el, se crea o edita ese.
+    destino = usuario_id or perfiles.id_activo()
+
     sexo = SEXOS_LEGADO.get(str(sexo).strip().lower(), str(sexo).strip())
     if sexo not in SEXOS_VALIDOS:
         raise ValueError(f"sexo debe ser uno de {SEXOS_VALIDOS}")
@@ -165,7 +177,7 @@ def guardar_usuario(
                 residencia_desde = excluded.residencia_desde
             """,
             (
-                ID_USUARIO_LOCAL,
+                destino,
                 fecha_nacimiento,
                 sexo,
                 texto_distrito,
@@ -174,7 +186,8 @@ def guardar_usuario(
                 (residencia_desde or "").strip() or None,
             ),
         )
-    return usuario_local()  # type: ignore[return-value]
+        fila = conexion.execute("SELECT * FROM usuario WHERE id = ?", (destino,)).fetchone()
+    return dict(fila) if fila else {}
 
 
 # ==========================================================================
@@ -499,8 +512,15 @@ def obtener(informe_id: str) -> dict | None:
         return None
 
 
-def listar(limite: int = 30) -> list[dict]:
-    """Documentos guardados en la base, del mas reciente al mas antiguo."""
+def listar(limite: int = 30, usuario_id: str | None = None) -> list[dict]:
+    """Documentos del perfil activo, del mas reciente al mas antiguo.
+
+    El filtro por perfil no es cosmetico: sin el, al cambiar de perfil la
+    pantalla Documentos seguia mostrando los escaneos de la otra persona.
+    """
+    from . import perfiles  # import diferido
+
+    usuario_id = usuario_id or perfiles.id_activo()
     with basedatos.conectar() as conexion:
         filas = conexion.execute(
             """
@@ -511,12 +531,104 @@ def listar(limite: int = 30) -> list[dict]:
                       JOIN estudio e ON e.id = v.estudio_id
                      WHERE e.documento_id = d.id) AS total_valores
             FROM documento d
+            WHERE d.usuario_id = ?
             ORDER BY d.fecha_carga DESC
             LIMIT ?
             """,
-            (limite,),
+            (usuario_id, limite),
         ).fetchall()
     return [dict(fila) for fila in filas]
+
+
+def borrar_documento(documento_id: str) -> dict:
+    """Elimina un documento por completo: filas de la base y archivos.
+
+    Se borra todo, no solo las filas: la persona que elimina un documento medico
+    espera que desaparezca, y dejar el JPEG y el JSON en disco haria que
+    "eliminar" fuera mentira. Se quitan:
+
+    - `valor_extraido`, `estudio` y `documento` de la base;
+    - el JPEG enderezado y la foto original de `capturas/`;
+    - el JSON de auditoria de `capturas/informes/`;
+    - la linea correspondiente de `registro.jsonl`.
+
+    Es irreversible. La confirmacion la pide la interfaz, no este modulo.
+
+    Devuelve el detalle de lo borrado. Si el documento no existe levanta
+    ValueError, para que la ruta pueda responder 404.
+    """
+    from .almacenamiento import DIR_CAPTURAS as _DIR, DIR_ORIGINALES, REGISTRO
+
+    conexion = basedatos.conectar()
+    try:
+        fila = conexion.execute(
+            "SELECT archivo_ruta FROM documento WHERE id = ?", (documento_id,)
+        ).fetchone()
+        if fila is None:
+            raise ValueError(f"el documento '{documento_id}' no existe")
+        archivo = Path(fila["archivo_ruta"]).name if fila["archivo_ruta"] else None
+
+        with conexion:
+            valores = conexion.execute(
+                """
+                DELETE FROM valor_extraido
+                WHERE estudio_id IN (SELECT id FROM estudio WHERE documento_id = ?)
+                """,
+                (documento_id,),
+            ).rowcount
+            estudios = conexion.execute(
+                "DELETE FROM estudio WHERE documento_id = ?", (documento_id,)
+            ).rowcount
+            conexion.execute("DELETE FROM documento WHERE id = ?", (documento_id,))
+    finally:
+        conexion.close()
+
+    archivos = []
+    for ruta in (
+        _DIR / archivo if archivo else None,
+        DIR_ORIGINALES / archivo if archivo else None,
+        _ruta_json(documento_id),
+    ):
+        if ruta and ruta.exists():
+            try:
+                ruta.unlink()
+                archivos.append(ruta.name)
+            except OSError:
+                pass  # el archivo queda, pero la base ya no lo referencia
+
+    # Los registros son append-only: para quitar una linea hay que reescribirlos.
+    # Hay dos y los dos guardan el id, asi que se limpian ambos: `capturas/
+    # registro.jsonl` (una linea por captura) y `capturas/informes/registro.jsonl`
+    # (una linea por informe extraido). Limpiar solo uno dejaba el documento
+    # apareciendo en `/api/capturas`.
+    for registro in (REGISTRO, REGISTRO_INFORMES):
+        if not registro.exists():
+            continue
+        try:
+            lineas = [
+                linea for linea in registro.read_text(encoding="utf-8").splitlines() if linea.strip()
+            ]
+            quedan = []
+            for linea in lineas:
+                try:
+                    if json.loads(linea).get("id") == documento_id:
+                        continue
+                except json.JSONDecodeError:
+                    pass  # linea ilegible: se conserva, no se pierde informacion
+                quedan.append(linea)
+            if len(quedan) != len(lineas):
+                registro.write_text(
+                    "\n".join(quedan) + ("\n" if quedan else ""), encoding="utf-8"
+                )
+        except OSError:
+            pass
+
+    return {
+        "documento": documento_id,
+        "valores": valores,
+        "estudios": estudios,
+        "archivos": archivos,
+    }
 
 
 def valores_de_documento(documento_id: str) -> list[dict]:

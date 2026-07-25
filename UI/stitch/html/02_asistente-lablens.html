@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>LabLens - Chat</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "tertiary-container": "#c1bea6",
+                        "surface-container-lowest": "#ffffff",
+                        "secondary": "#67587d",
+                        "on-error-container": "#93000a",
+                        "on-secondary-container": "#68587d",
+                        "on-secondary-fixed-variant": "#4f4064",
+                        "error": "#ba1a1a",
+                        "secondary-fixed": "#eddcff",
+                        "tertiary-fixed": "#e7e3ca",
+                        "surface-container": "#edeeef",
+                        "surface": "#f8f9fa",
+                        "secondary-fixed-dim": "#d2bfea",
+                        "primary-container": "#a7c957",
+                        "inverse-surface": "#2e3132",
+                        "on-tertiary-fixed": "#1d1c0d",
+                        "primary-fixed-dim": "#b0d360",
+                        "inverse-on-surface": "#f0f1f2",
+                        "inverse-primary": "#b0d360",
+                        "on-surface": "#191c1d",
+                        "outline": "#757967",
+                        "on-primary-container": "#3d5300",
+                        "secondary-container": "#e6d2fe",
+                        "primary": "#4d6700",
+                        "on-tertiary": "#ffffff",
+                        "on-tertiary-container": "#4e4d3a",
+                        "on-error": "#ffffff",
+                        "on-secondary-fixed": "#221536",
+                        "tertiary-fixed-dim": "#cac7af",
+                        "on-primary-fixed": "#151f00",
+                        "surface-variant": "#e1e3e4",
+                        "surface-tint": "#4d6700",
+                        "on-tertiary-fixed-variant": "#494835",
+                        "error-container": "#ffdad6",
+                        "surface-container-highest": "#e1e3e4",
+                        "on-secondary": "#ffffff",
+                        "background": "#f8f9fa",
+                        "on-primary": "#ffffff",
+                        "on-background": "#191c1d",
+                        "on-surface-variant": "#444839",
+                        "surface-bright": "#f8f9fa",
+                        "surface-container-low": "#f3f4f5",
+                        "tertiary": "#615f4b",
+                        "on-primary-fixed-variant": "#394d00",
+                        "primary-fixed": "#ccf078",
+                        "surface-dim": "#d9dadb",
+                        "outline-variant": "#c5c9b4",
+                        "surface-container-high": "#e7e8e9"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "lg": "24px",
+                        "base": "8px",
+                        "xl": "32px",
+                        "xs": "4px",
+                        "container-margin": "20px",
+                        "gutter": "16px",
+                        "md": "16px",
+                        "sm": "12px"
+                    },
+                    "fontFamily": {
+                        "headline-lg": ["Manrope"],
+                        "headline-md": ["Manrope"],
+                        "label-sm": ["Manrope"],
+                        "display-lg": ["Manrope"],
+                        "headline-sm": ["Manrope"],
+                        "body-lg": ["Manrope"],
+                        "headline-lg-mobile": ["Manrope"],
+                        "body-md": ["Manrope"],
+                        "label-md": ["Manrope"]
+                    },
+                    "fontSize": {
+                        "headline-lg": ["32px", { "lineHeight": "40px", "fontWeight": "700" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "fontWeight": "500" }],
+                        "display-lg": ["48px", { "lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "800" }],
+                        "headline-sm": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "body-lg": ["18px", { "lineHeight": "28px", "fontWeight": "400" }],
+                        "headline-lg-mobile": ["28px", { "lineHeight": "36px", "fontWeight": "700" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "label-md": ["14px", { "lineHeight": "20px", "letterSpacing": "0.05em", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { background-color: theme('colors.background'); color: theme('colors.on-background'); font-family: 'Manrope', sans-serif; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .material-symbols-outlined.fill { font-variation-settings: 'FILL' 1; }
+        
+        /* Modal Animation */
+        .modal-enter { opacity: 0; transform: scale(0.95); }
+        .modal-enter-active { opacity: 1; transform: scale(1); transition: opacity 300ms ease-out, transform 300ms ease-out; }
+        .modal-leave { opacity: 1; transform: scale(1); }
+        .modal-leave-active { opacity: 0; transform: scale(0.95); transition: opacity 200ms ease-in, transform 200ms ease-in; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="flex flex-col min-h-screen">
+<!-- TopAppBar -->
+<header class="flex justify-between items-center w-full px-container-margin h-16 bg-surface dark:bg-on-background border-b border-outline-variant dark:border-outline docked full-width top-0 z-40 fixed">
+<button class="p-2 hover:bg-surface-container-high dark:hover:bg-surface-container-highest rounded-full active:scale-95 transition-transform" onclick="toggleDrawer()">
+<span class="material-symbols-outlined text-on-surface-variant dark:text-on-surface-variant">menu</span>
+</button>
+<h1 class="font-headline-md text-headline-md-mobile font-bold text-primary dark:text-primary-fixed-dim">LabLens</h1>
+<div class="relative cursor-pointer" onclick="document.getElementById('profileDropdown').classList.toggle('hidden')">
+<div class="w-10 h-10 rounded-full bg-surface-container-high overflow-hidden border border-outline-variant">
+<img alt="User profile photo" class="w-full h-full object-cover" data-alt="A small circular avatar placeholder image showing a generic modern professional in a minimalist, bright corporate setting. Soft lighting, neutral background, conveying trust and medical precision." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBxrC6HfBP8CpFXfWg7ZK7u6uKO1qprmY8hJUxNIc-0eyWj16KjKzvdIILZ3HG8_B1YUkA480BKHFxXo7dNUe0lFZgjwlXASKwp-YEFUW8C2wn_ifvHPYhD_njHvO2_i5k1hntgWcL_wJ_GVMkb6XcVYxYGR-2aK0z1uV8_MwUYupbqJNcdHih0fwDGb2VDifu1jgbZOSW12Veiz0JZRgfhRVYDwgdOZHPDMdOoIOaj-P2BoB3E4TMjBsdu0eJpKu6y8g8jF8h8LcTi"/>
+</div>
+<!-- Profile Dropdown -->
+<div class="absolute right-0 mt-2 w-48 bg-surface rounded-xl shadow-lg border border-outline-variant py-2 hidden z-50" id="profileDropdown">
+<a class="block px-4 py-2 text-sm font-label-md text-on-surface hover:bg-surface-container-low transition-colors" href="#">Mi Perfil</a>
+<a class="block px-4 py-2 text-sm font-label-md text-on-surface hover:bg-surface-container-low transition-colors" href="#">Configuración</a>
+<hr class="my-1 border-outline-variant/50"/>
+<a class="block px-4 py-2 text-sm font-label-md text-error hover:bg-error-container/20 transition-colors" href="#">Cerrar Sesión</a>
+</div>
+</div>
+</header>
+<!-- NavigationDrawer Overlay (Hidden by default) -->
+<div class="fixed inset-0 bg-on-background/20 backdrop-blur-sm z-[55] hidden transition-opacity opacity-0" id="drawerOverlay" onclick="toggleDrawer()"></div>
+<!-- NavigationDrawer -->
+<aside class="fixed inset-y-0 left-0 z-[60] flex flex-col py-lg bg-surface dark:bg-on-background shadow-lg dark:shadow-none divide-y divide-outline-variant bg-surface/90 backdrop-blur-md h-full w-80 rounded-r-xl transform -translate-x-full transition-transform duration-300 ease-in-out" id="navDrawer">
+<div class="px-container-margin pb-lg flex justify-between items-center">
+<span class="font-headline-md text-headline-md-mobile font-bold text-primary">LabLens</span>
+<button class="p-2 hover:bg-surface-container-low rounded-full" onclick="toggleDrawer()">
+<span class="material-symbols-outlined text-on-surface-variant">close</span>
+</button>
+</div>
+<nav class="flex-1 overflow-y-auto py-md">
+<ul class="space-y-2">
+<li>
+<a class="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-container-low mx-2 rounded-full font-body-md text-body-md hover:bg-primary-container/20 transition-colors active:opacity-80" href="#">
+<span class="material-symbols-outlined mr-4">share</span>
+                        Shared
+                    </a>
+</li>
+<li>
+<a class="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-container-low mx-2 rounded-full font-body-md text-body-md hover:bg-primary-container/20 transition-colors active:opacity-80" href="#">
+<span class="material-symbols-outlined mr-4">settings</span>
+                        Config
+                    </a>
+</li>
+<li>
+<a class="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-container-low mx-2 rounded-full font-body-md text-body-md hover:bg-primary-container/20 transition-colors active:opacity-80" href="#">
+<span class="material-symbols-outlined mr-4">help</span>
+                        Help
+                    </a>
+</li>
+<li>
+<a class="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-container-low mx-2 rounded-full font-body-md text-body-md hover:bg-primary-container/20 transition-colors active:opacity-80" href="#" onclick="openModal('termsModal'); toggleDrawer();">
+<span class="material-symbols-outlined mr-4">policy</span>
+                        Términos
+                    </a>
+</li>
+</ul>
+</nav>
+</aside>
+<!-- Main Content Area -->
+<main class="flex-1 pt-16 pb-20 flex flex-col relative w-full max-w-4xl mx-auto h-[884px]">
+<!-- Chat History Area -->
+<div class="flex-1 overflow-y-auto p-container-margin flex flex-col space-y-4">
+<!-- Assistant Intro -->
+<div class="flex flex-col items-center justify-center mt-8 mb-6">
+<div class="w-24 h-24 rounded-full overflow-hidden mb-4 border-4 border-primary-container shadow-sm">
+<img alt="Asistente LabLens" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAlb4FBxD9qaUJYMX3r2k_iG_r0p9_NWXnZGHFXk0nMEHomeAmiyuJYeR6_XEHdKVNKhmGBedNLgu_eLtIYPjCQARHCUznxHL6U5L09wa-Ys939702SkVMHNaouo2Qa8oezpaV4ZZqoAThweFhcbcybLX-VZqM0QbwxqNv-ib2FQQKJrBCXWftjbUvKeAg-hABNXxzSym-yQdROwNozBBj8qsT1nkDOCSHItwu0mfOTPZFCKyb_mx4r7NNCHpuOCbtvEoETUOU6jXNN"/>
+</div>
+<h2 class="font-headline-md text-on-surface font-bold text-center">Asistente LabLens</h2>
+<p class="font-body-md text-on-surface-variant text-center max-w-xs mt-2">
+            Tu asistente clínico virtual, impulsado por inteligencia artificial.
+        </p>
+</div>
+<!-- Assistant Message -->
+<div class="flex justify-start">
+<div class="flex items-end max-w-[85%]">
+<div class="w-8 h-8 rounded-full overflow-hidden mr-2 shrink-0 border border-outline-variant/50">
+<img alt="Asistente" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAlb4FBxD9qaUJYMX3r2k_iG_r0p9_NWXnZGHFXk0nMEHomeAmiyuJYeR6_XEHdKVNKhmGBedNLgu_eLtIYPjCQARHCUznxHL6U5L09wa-Ys939702SkVMHNaouo2Qa8oezpaV4ZZqoAThweFhcbcybLX-VZqM0QbwxqNv-ib2FQQKJrBCXWftjbUvKeAg-hABNXxzSym-yQdROwNozBBj8qsT1nkDOCSHItwu0mfOTPZFCKyb_mx4r7NNCHpuOCbtvEoETUOU6jXNN"/>
+</div>
+<div class="bg-surface-container-low text-on-surface p-4 rounded-2xl rounded-bl-sm shadow-sm border border-outline-variant/30">
+<p class="font-body-md">¡Hola! Estoy aquí para ofrecerte apoyo clínico, ayudarte a interpretar resultados de laboratorio y responder cualquier duda que tengas. ¿Sobre qué tema te gustaría consultar hoy?</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Chat Input Area -->
+<div class="p-container-margin bg-background/80 backdrop-blur-md sticky bottom-0 w-full z-30">
+<div class="flex items-center bg-tertiary-fixed border border-outline-variant/50 rounded-full px-2 py-1 shadow-sm focus-within:ring-2 focus-within:ring-primary focus-within:border-transparent transition-all">
+<button class="p-2 text-on-surface-variant hover:text-primary hover:bg-surface-container rounded-full transition-colors shrink-0">
+<span class="material-symbols-outlined">add</span>
+</button>
+<input class="flex-1 bg-transparent border-none focus:ring-0 text-on-surface font-body-md placeholder-on-surface-variant/70 min-w-0 px-2 h-10" placeholder="Dinos la duda que tengas..." type="text"/>
+<button class="p-2 text-primary hover:bg-primary-container/20 rounded-full transition-colors shrink-0 flex items-center justify-center">
+<span class="material-symbols-outlined fill">arrow_upward</span>
+</button>
+</div>
+</div>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-20 bg-surface dark:bg-on-background px-4 border-t border-outline-variant dark:border-outline docked full-width bottom-0 hidden md:hidden">
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant hover:bg-surface-container dark:hover:bg-surface-container-high active:scale-90 transition-all p-2 rounded-xl w-16" href="#">
+<span class="material-symbols-outlined mb-1">grid_view</span>
+<span class="font-label-md text-label-md text-[10px]">Menu</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant hover:bg-surface-container dark:hover:bg-surface-container-high active:scale-90 transition-all p-2 rounded-xl w-16" href="#">
+<span class="material-symbols-outlined mb-1">description</span>
+<span class="font-label-md text-label-md text-[10px]">Documentos</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant hover:bg-surface-container dark:hover:bg-surface-container-high active:scale-90 transition-all p-2 rounded-xl w-16" href="#">
+<span class="material-symbols-outlined mb-1">analytics</span>
+<span class="font-label-md text-label-md text-[10px]">Análisis</span>
+</a>
+<a class="flex flex-col items-center justify-center text-primary dark:text-primary-fixed-dim font-bold hover:bg-surface-container dark:hover:bg-surface-container-high active:scale-90 transition-all p-2 rounded-xl w-16" href="#">
+<span class="material-symbols-outlined mb-1 fill">chat</span>
+<span class="font-label-md text-label-md text-[10px]">Chat</span>
+</a>
+</nav>
+<!-- Active Nav State Script for Mobile (Since md:hidden is requested for responsive pivot, forcing it visible for this specific view based on prompt, but ideally follows CSS hidden md:flex rules) -->
+<style>
+        /* Override for this specific task since it asks for BottomNavBar in a typical mobile view */
+        @media (max-width: 768px) {
+            nav.fixed.bottom-0 { display: flex; }
+        }
+    </style>
+<!-- Modal Overlay: Términos y Condiciones -->
+<div class="fixed inset-0 z-[70] hidden items-center justify-center p-4" id="termsModal">
+<div class="absolute inset-0 bg-inverse-surface/40 backdrop-blur-sm transition-opacity opacity-0" id="termsModalBackdrop" onclick="closeModal('termsModal')"></div>
+<div class="relative bg-surface rounded-xl shadow-xl w-full max-w-md h-[707px] flex flex-col border border-outline-variant transform scale-95 opacity-0 transition-all duration-300" id="termsModalContent">
+<!-- Modal Header -->
+<div class="flex items-center justify-between p-4 border-b border-outline-variant/50">
+<h2 class="font-headline-sm text-on-surface flex items-center">
+<span class="material-symbols-outlined mr-2 text-primary">add</span>
+                    Términos y condiciones
+                </h2>
+<button class="p-2 text-on-surface-variant hover:bg-surface-container rounded-full transition-colors" onclick="closeModal('termsModal')">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<!-- Modal Body (Scrollable) -->
+<div class="flex-1 overflow-y-auto p-6 text-on-surface-variant font-body-md space-y-4 bg-surface-bright">
+<h3 class="font-headline-sm text-on-surface flex items-center">
+<span class="material-symbols-outlined mr-2 text-secondary">remove</span>
+                    Términos y condiciones
+                </h3>
+<p>
+                    Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. 
+                </p>
+<p>
+                    Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+                </p>
+<p>
+                    Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo. Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur magni dolores eos qui ratione voluptatem sequi nesciunt.
+                </p>
+<p>
+                    Neque porro quisquam est, qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit, sed quia non numquam eius modi tempora incidunt ut labore et dolore magnam aliquam quaerat voluptatem. Ut enim ad minima veniam, quis nostrum exercitationem ullam corporis suscipit laboriosam, nisi ut aliquid ex ea commodi consequatur?
+                </p>
+</div>
+<!-- Optional Modal Footer -->
+<div class="p-4 border-t border-outline-variant/50 bg-surface flex justify-end rounded-b-xl">
+<button class="px-6 py-2 bg-primary-container text-on-primary-container font-label-md rounded-full hover:bg-primary-fixed hover:text-on-primary-fixed transition-colors" onclick="closeModal('termsModal')">
+                    Aceptar
+                </button>
+</div>
+</div>
+</div>
+<script>
+        // Drawer Logic
+        function toggleDrawer() {
+            const drawer = document.getElementById('navDrawer');
+            const overlay = document.getElementById('drawerOverlay');
+            
+            if (drawer.classList.contains('-translate-x-full')) {
+                // Open
+                drawer.classList.remove('-translate-x-full');
+                overlay.classList.remove('hidden');
+                // slight delay for fade to work
+                setTimeout(() => overlay.classList.remove('opacity-0'), 10);
+            } else {
+                // Close
+                drawer.classList.add('-translate-x-full');
+                overlay.classList.add('opacity-0');
+                setTimeout(() => overlay.classList.add('hidden'), 300); // match transition duration
+            }
+        }
+
+        // Modal Logic
+        function openModal(modalId) {
+            const modal = document.getElementById(modalId);
+            const backdrop = document.getElementById(modalId + 'Backdrop');
+            const content = document.getElementById(modalId + 'Content');
+            
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            
+            // Trigger reflow
+            void modal.offsetWidth;
+            
+            backdrop.classList.remove('opacity-0');
+            backdrop.classList.add('opacity-100');
+            
+            content.classList.remove('scale-95', 'opacity-0');
+            content.classList.add('scale-100', 'opacity-100');
+        }
+
+        function closeModal(modalId) {
+            const modal = document.getElementById(modalId);
+            const backdrop = document.getElementById(modalId + 'Backdrop');
+            const content = document.getElementById(modalId + 'Content');
+            
+            backdrop.classList.remove('opacity-100');
+            backdrop.classList.add('opacity-0');
+            
+            content.classList.remove('scale-100', 'opacity-100');
+            content.classList.add('scale-95', 'opacity-0');
+            
+            setTimeout(() => {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+            }, 300); // Wait for transition
+        }
+    </script>
+</body></html>

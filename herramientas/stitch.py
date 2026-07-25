@@ -35,7 +35,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
+import unicodedata
 from pathlib import Path
 
 import requests
@@ -141,6 +143,44 @@ class Stitch:
             return {"structured": resultado["structuredContent"], "contenido": bloques}
         return {"contenido": bloques, "es_error": resultado.get("isError", False)}
 
+    # --- Envoltorios de conveniencia -------------------------------------
+    # Ojo: `list_screens` y `get_screen` piden el id SIN el prefijo
+    # `projects/`, mientras que `get_project` lo pide CON el prefijo. Es facil
+    # equivocarse: con el valor mal formado el servicio responde
+    # "Request contains an invalid argument" sin decir cual.
+
+    @staticmethod
+    def solo_id(referencia: str) -> str:
+        """`projects/123` -> `123`. Acepta el id pelado sin tocarlo."""
+        return referencia.rsplit("/", 1)[-1]
+
+    def proyectos(self) -> list[dict]:
+        respuesta = self.llamar("list_projects")
+        return (respuesta.get("structured") or {}).get("projects") or []
+
+    def proyecto(self, referencia: str) -> dict:
+        nombre = referencia if referencia.startswith("projects/") else f"projects/{referencia}"
+        return self.llamar("get_project", {"name": nombre})
+
+    def pantallas(self, referencia: str) -> dict:
+        return self.llamar("list_screens", {"projectId": self.solo_id(referencia)})
+
+    def pantalla(self, proyecto: str, pantalla: str) -> dict:
+        id_proyecto = self.solo_id(proyecto)
+        id_pantalla = self.solo_id(pantalla)
+        return self.llamar(
+            "get_screen",
+            {
+                "name": f"projects/{id_proyecto}/screens/{id_pantalla}",
+                "projectId": id_proyecto,
+                "screenId": id_pantalla,
+            },
+        )
+
+    def sistemas_de_diseno(self, referencia: str | None = None) -> dict:
+        argumentos = {"projectId": self.solo_id(referencia)} if referencia else {}
+        return self.llamar("list_design_systems", argumentos)
+
 
 # ==========================================================================
 # CLI
@@ -184,15 +224,23 @@ def main() -> int:
         return 0
 
     if args.comando == "proyectos":
-        _imprimir(cliente.llamar("list_projects"))
+        for p in cliente.proyectos():
+            tema = p.get("designTheme") or {}
+            print(f"{p.get('name')}  titulo={p.get('title')!r}  "
+                  f"dispositivo={p.get('deviceType')}  actualizado={p.get('updateTime')}")
+            print(f"    tema: {tema.get('bodyFontFamily')} / {tema.get('colorMode')} / "
+                  f"{tema.get('customColor')}  pantallas={len(p.get('screenInstances') or [])}")
         return 0
 
     if args.comando == "pantallas":
-        _imprimir(cliente.llamar("list_screens", {"project": args.proyecto}))
+        _imprimir(cliente.pantallas(args.proyecto))
         return 0
 
     if args.comando == "pantalla":
-        _imprimir(cliente.llamar("get_screen", {"name": args.pantalla}))
+        proyecto, _, pantalla = args.pantalla.partition(":")
+        if not pantalla:
+            raise SystemExit("usar formato <id_proyecto>:<id_pantalla>")
+        _imprimir(cliente.pantalla(proyecto, pantalla))
         return 0
 
     if args.comando == "llamar":
@@ -200,16 +248,94 @@ def main() -> int:
         return 0
 
     if args.comando == "bajar":
-        destino = Path(args.destino)
-        destino.mkdir(parents=True, exist_ok=True)
-        pantallas = cliente.llamar("list_screens", {"project": args.proyecto})
-        (destino / "pantallas.json").write_text(
-            json.dumps(pantallas, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
-        print(f"listado guardado en {destino / 'pantallas.json'}")
-        return 0
+        return bajar(cliente, args.proyecto, Path(args.destino))
 
     return 1
+
+
+def _slug(texto: str) -> str:
+    """Nombre de archivo seguro a partir del titulo de la pantalla."""
+    plano = unicodedata.normalize("NFD", texto or "sin-titulo")
+    plano = "".join(c for c in plano if unicodedata.category(c) != "Mn").lower()
+    plano = re.sub(r"[^a-z0-9]+", "-", plano).strip("-")
+    return plano or "sin-titulo"
+
+
+def bajar(cliente: Stitch, referencia: str, destino: Path) -> int:
+    """Guarda en disco el sistema de diseno y todas las pantallas del proyecto."""
+    id_proyecto = cliente.solo_id(referencia)
+    destino.mkdir(parents=True, exist_ok=True)
+    dir_html = destino / "html"
+    dir_img = destino / "capturas"
+    dir_html.mkdir(exist_ok=True)
+    dir_img.mkdir(exist_ok=True)
+
+    proyecto = cliente.proyecto(id_proyecto)
+    datos = (proyecto.get("structured") or {})
+    tema = datos.get("designTheme") or {}
+    if tema.get("designMd"):
+        (destino / "DESIGN.md").write_text(tema["designMd"], encoding="utf-8")
+        print(f"DESIGN.md -> {destino / 'DESIGN.md'} ({len(tema['designMd'])} chars)")
+
+    # El tema sin el designMd, que ya se guardo aparte
+    (destino / "tema.json").write_text(
+        json.dumps({k: v for k, v in tema.items() if k != "designMd"}, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    respuesta = cliente.pantallas(id_proyecto)
+    pantallas = (respuesta.get("structured") or {}).get("screens") or []
+    if not pantallas:
+        print(f"sin pantallas. Respuesta: {json.dumps(respuesta, ensure_ascii=False)[:400]}")
+        return 1
+
+    indice = []
+    for numero, pantalla in enumerate(pantallas, start=1):
+        titulo = pantalla.get("title") or f"pantalla-{numero}"
+        base = f"{numero:02d}_{_slug(titulo)}"
+        registro = {
+            "orden": numero,
+            "titulo": titulo,
+            "id": cliente.solo_id(pantalla.get("name", "")),
+            "dispositivo": pantalla.get("deviceType"),
+            "ancho": pantalla.get("width"),
+            "alto": pantalla.get("height"),
+        }
+
+        url_html = (pantalla.get("htmlCode") or {}).get("downloadUrl")
+        if url_html:
+            try:
+                r = cliente.sesion.get(url_html, timeout=120)
+                r.raise_for_status()
+                ruta = dir_html / f"{base}.html"
+                ruta.write_bytes(r.content)
+                registro["html"] = f"html/{ruta.name}"
+                registro["html_bytes"] = len(r.content)
+            except requests.RequestException as error:
+                registro["html_error"] = str(error)[:120]
+
+        url_img = (pantalla.get("screenshot") or {}).get("downloadUrl")
+        if url_img:
+            try:
+                r = cliente.sesion.get(url_img, timeout=120)
+                r.raise_for_status()
+                ruta = dir_img / f"{base}.png"
+                ruta.write_bytes(r.content)
+                registro["captura"] = f"capturas/{ruta.name}"
+                registro["captura_bytes"] = len(r.content)
+            except requests.RequestException as error:
+                registro["captura_error"] = str(error)[:120]
+
+        indice.append(registro)
+        print(f"  {numero:2d}. {titulo:34s} html={registro.get('html_bytes', 0):>7} B  "
+              f"png={registro.get('captura_bytes', 0):>8} B")
+
+    (destino / "indice.json").write_text(
+        json.dumps({"proyecto": id_proyecto, "pantallas": indice}, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    print(f"\n{len(indice)} pantallas en {destino}")
+    return 0
 
 
 if __name__ == "__main__":

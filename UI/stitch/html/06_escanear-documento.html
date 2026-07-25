@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+
+<html lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>LabLens - Escanear Documento</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .material-symbols-outlined.fill {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-container-highest": "#e1e3e4",
+                        "on-secondary-container": "#68587d",
+                        "surface": "#f8f9fa",
+                        "surface-tint": "#4d6700",
+                        "outline-variant": "#c5c9b4",
+                        "primary-fixed-dim": "#b0d360",
+                        "error-container": "#ffdad6",
+                        "on-background": "#191c1d",
+                        "secondary-fixed-dim": "#d2bfea",
+                        "inverse-surface": "#2e3132",
+                        "on-secondary-fixed": "#221536",
+                        "on-error": "#ffffff",
+                        "on-tertiary-fixed": "#1d1c0d",
+                        "on-primary": "#ffffff",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-container-low": "#f3f4f5",
+                        "outline": "#757967",
+                        "on-tertiary-container": "#4e4d3a",
+                        "inverse-primary": "#b0d360",
+                        "surface-variant": "#e1e3e4",
+                        "inverse-on-surface": "#f0f1f2",
+                        "secondary": "#67587d",
+                        "error": "#ba1a1a",
+                        "on-primary-fixed-variant": "#394d00",
+                        "on-error-container": "#93000a",
+                        "on-secondary": "#ffffff",
+                        "surface-container-high": "#e7e8e9",
+                        "primary": "#4d6700",
+                        "on-surface": "#191c1d",
+                        "background": "#f8f9fa",
+                        "surface-container": "#edeeef",
+                        "on-secondary-fixed-variant": "#4f4064",
+                        "on-tertiary-fixed-variant": "#494835",
+                        "on-tertiary": "#ffffff",
+                        "tertiary-fixed": "#e7e3ca",
+                        "on-surface-variant": "#444839",
+                        "primary-container": "#a7c957",
+                        "on-primary-fixed": "#151f00",
+                        "tertiary": "#615f4b",
+                        "primary-fixed": "#ccf078",
+                        "surface-dim": "#d9dadb",
+                        "surface-bright": "#f8f9fa",
+                        "secondary-fixed": "#eddcff",
+                        "tertiary-container": "#c1bea6",
+                        "tertiary-fixed-dim": "#cac7af",
+                        "secondary-container": "#e6d2fe",
+                        "on-primary-container": "#3d5300"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "xs": "4px",
+                        "base": "8px",
+                        "xl": "32px",
+                        "sm": "12px",
+                        "md": "16px",
+                        "gutter": "16px",
+                        "container-margin": "20px",
+                        "lg": "24px"
+                    },
+                    "fontFamily": {
+                        "label-sm": ["Manrope"],
+                        "label-md": ["Manrope"],
+                        "headline-lg": ["Manrope"],
+                        "display-lg": ["Manrope"],
+                        "headline-sm": ["Manrope"],
+                        "headline-md": ["Manrope"],
+                        "headline-lg-mobile": ["Manrope"],
+                        "body-lg": ["Manrope"],
+                        "body-md": ["Manrope"]
+                    },
+                    "fontSize": {
+                        "label-sm": ["12px", { "lineHeight": "16px", "fontWeight": "500" }],
+                        "label-md": ["14px", { "lineHeight": "20px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "fontWeight": "700" }],
+                        "display-lg": ["48px", { "lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "800" }],
+                        "headline-sm": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "headline-lg-mobile": ["28px", { "lineHeight": "36px", "fontWeight": "700" }],
+                        "body-lg": ["18px", { "lineHeight": "28px", "fontWeight": "400" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface font-body-md antialiased min-h-screen pb-24">
+<!-- TopAppBar -->
+<header class="flex justify-between items-center w-full px-container-margin h-16 bg-surface dark:bg-on-background border-b border-outline-variant dark:border-outline docked full-width top-0 sticky z-40">
+<button class="text-on-surface-variant p-2 active:scale-95 transition-transform hover:bg-surface-container-high rounded-full">
+<span class="material-symbols-outlined text-[24px]">menu</span>
+</button>
+<h1 class="font-headline-md text-headline-md-mobile font-bold text-primary dark:text-primary-fixed-dim">LabLens</h1>
+<div class="w-10 h-10 rounded-full border border-outline-variant bg-tertiary-container overflow-hidden">
+<!-- Placeholder avatar -->
+</div>
+</header>
+<main class="px-container-margin py-md max-w-md mx-auto">
+<!-- Headline -->
+<h2 class="font-headline-lg-mobile text-headline-lg-mobile mb-6 text-on-background">Escanear Documento</h2>
+<!-- Viewfinder Area -->
+<div class="relative w-full aspect-square bg-surface-container-lowest rounded-xl shadow-[0px_4px_12px_rgba(0,0,0,0.05)] border border-outline-variant mb-6 flex flex-col items-center justify-center p-6 text-center">
+<!-- Corner Guides -->
+<div class="absolute top-4 left-4 w-12 h-12 border-t-2 border-l-2 border-primary rounded-tl-lg opacity-50"></div>
+<div class="absolute top-4 right-4 w-12 h-12 border-t-2 border-r-2 border-primary rounded-tr-lg opacity-50"></div>
+<div class="absolute bottom-4 left-4 w-12 h-12 border-b-2 border-l-2 border-primary rounded-bl-lg opacity-50"></div>
+<div class="absolute bottom-4 right-4 w-12 h-12 border-b-2 border-r-2 border-primary rounded-br-lg opacity-50"></div>
+<p class="font-body-md text-body-md text-on-surface-variant mb-8 max-w-[200px]">Coloca tu documento médico dentro del recuadro</p>
+<span class="material-symbols-outlined text-[64px] text-outline opacity-50">photo_camera</span>
+</div>
+<!-- Action Buttons -->
+<div class="flex flex-col gap-sm mb-8">
+<button class="w-full h-[56px] bg-primary-container text-on-primary-container font-label-md text-label-md rounded-full flex items-center justify-center gap-2 shadow-[0px_4px_12px_rgba(0,0,0,0.05)] active:scale-[0.98] transition-transform">
+<span class="material-symbols-outlined">photo_camera</span>
+                Tomar foto
+            </button>
+<button class="w-full h-[56px] bg-secondary-container text-on-secondary-container font-label-md text-label-md rounded-full flex items-center justify-center gap-2 shadow-[0px_4px_12px_rgba(0,0,0,0.05)] active:scale-[0.98] transition-transform">
+<span class="material-symbols-outlined">upload</span>
+                Subir PDF
+            </button>
+</div>
+<!-- Info Card -->
+<div class="bg-tertiary-fixed text-on-tertiary-fixed rounded-xl p-md border border-outline-variant shadow-[0px_4px_12px_rgba(0,0,0,0.05)]">
+<h3 class="font-label-md text-label-md mb-3">Tu documento será:</h3>
+<div class="grid grid-cols-2 gap-y-3 gap-x-2">
+<div class="flex items-center gap-2 font-body-sm text-body-md">
+<span class="material-symbols-outlined text-primary text-[18px]">check</span>
+                    Digitalizado
+                </div>
+<div class="flex items-center gap-2 font-body-sm text-body-md">
+<span class="material-symbols-outlined text-primary text-[18px]">check</span>
+                    Analizado por IA
+                </div>
+<div class="flex items-center gap-2 font-body-sm text-body-md">
+<span class="material-symbols-outlined text-primary text-[18px]">check</span>
+                    Guardado con seguridad
+                </div>
+<div class="flex items-center gap-2 font-body-sm text-body-md">
+<span class="material-symbols-outlined text-primary text-[18px]">check</span>
+                    Añadido a historial
+                </div>
+</div>
+</div>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-20 bg-surface dark:bg-on-background px-4 border-t border-outline-variant dark:border-outline md:hidden">
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant hover:bg-surface-container dark:hover:bg-surface-container-high w-16 h-16 rounded-xl transition-all" href="#">
+<span class="material-symbols-outlined text-[24px] mb-1">grid_view</span>
+<span class="font-label-sm text-label-sm">Menu</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant hover:bg-surface-container dark:hover:bg-surface-container-high w-16 h-16 rounded-xl transition-all" href="#">
+<span class="material-symbols-outlined text-[24px] mb-1">description</span>
+<span class="font-label-sm text-label-sm">Documentos</span>
+</a>
+<a class="flex flex-col items-center justify-center text-primary dark:text-primary-fixed-dim font-bold bg-secondary-container rounded-xl w-16 h-16 transition-all" href="#">
+<span class="material-symbols-outlined fill text-[24px] mb-1">analytics</span>
+<span class="font-label-sm text-label-sm">Análisis</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant hover:bg-surface-container dark:hover:bg-surface-container-high w-16 h-16 rounded-xl transition-all" href="#">
+<span class="material-symbols-outlined text-[24px] mb-1">chat</span>
+<span class="font-label-sm text-label-sm">Chat</span>
+</a>
+</nav>
+</body></html>

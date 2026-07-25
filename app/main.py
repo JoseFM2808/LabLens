@@ -16,11 +16,13 @@ from . import (
     almacenamiento,
     analisis,
     basedatos,
+    comparativa,
     detector,
     enderezar,
     extraccion,
     formatos,
     integraciones,
+    referencia,
     repositorio,
 )
 
@@ -55,6 +57,7 @@ def config() -> dict:
         },
         "usuario_configurado": repositorio.usuario_local() is not None,
         "sexos": list(repositorio.SEXOS_VALIDOS),
+        "condiciones": list(repositorio.CONDICIONES_VALIDAS),
     }
 
 
@@ -70,20 +73,46 @@ def api_usuario_guardar(
     fecha_nacimiento: str = Form(...),
     sexo: str = Form(...),
     distrito_residencia: str = Form(""),
+    condicion: str = Form("general"),
+    residencia_desde: str = Form(""),
 ) -> JSONResponse:
     """Registra o actualiza el usuario local.
 
     Solo demografia minima: la fecha de nacimiento y el sexo son obligatorios
-    porque los rangos de referencia de la OMS dependen de edad y sexo. No se
-    guarda ningun nombre ni documento de identidad.
+    porque los rangos de referencia dependen de edad y sexo. No se guarda ningun
+    nombre ni documento de identidad.
+
+    `distrito_residencia` es el distrito donde vive la persona, no donde se hizo
+    el analisis: de ahi sale la altitud con la que la NTS 213 ajusta la
+    hemoglobina. Si el nombre existe en varios departamentos, la respuesta es 400
+    con los candidatos, para que elija la persona.
+
+    `condicion` es obligatoria para los rangos de la NTS 213 en mujeres adultas,
+    que se estratifican en no gestante / gestante por trimestre / puerpera. El
+    valor por defecto 'general' no asume ninguna.
     """
     try:
         usuario = repositorio.guardar_usuario(
-            fecha_nacimiento.strip(), sexo.strip(), distrito_residencia.strip() or None
+            fecha_nacimiento.strip(),
+            sexo.strip(),
+            distrito_residencia.strip() or None,
+            condicion.strip() or "general",
+            residencia_desde.strip() or None,
         )
     except ValueError as error:
         return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
     return JSONResponse({"ok": True, "usuario": usuario})
+
+
+@app.get("/api/distritos")
+def api_distritos(q: str = "") -> dict:
+    """Distritos del padron que empiezan con `q`, con su altitud.
+
+    La interfaz lo usa para que la persona elija su distrito de una lista en vez
+    de escribirlo suelto: hay cuatro Bellavista y solo uno esta a 13 msnm.
+    """
+    with basedatos.conectar() as conexion:
+        return {"distritos": referencia.distritos_parecidos(conexion, q)}
 
 
 @app.get("/api/basedatos")
@@ -94,6 +123,18 @@ def api_basedatos() -> dict:
     proposito hasta que se cargue la data de referencia.
     """
     return basedatos.estado()
+
+
+@app.get("/api/analisis")
+def api_analisis() -> dict:
+    """Comparativa del historial del usuario contra los rangos de referencia.
+
+    Cruza todas sus mediciones con `rango_referencia` (OMS / MINSA) filtrando por
+    edad y sexo, y agrupa por sistema corporal. Mientras el Dominio 2 esté vacío,
+    `referencias.disponibles` viene en false y cada biomarcador queda en
+    `sin_referencia`.
+    """
+    return comparativa.analisis_usuario()
 
 
 @app.get("/api/documentos/{documento_id}/valores")

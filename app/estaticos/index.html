@@ -3,132 +3,373 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#0b1220" />
-  <title>LabLens - Escaner de documentos medicos</title>
-  <link rel="stylesheet" href="/estaticos/estilos.css" />
+  <meta name="theme-color" content="#f8f9fa" />
+  <title>LabLens</title>
+  <link rel="stylesheet" href="/estaticos/disenio.css" />
 </head>
 <body>
-  <main id="app">
-    <header class="barra">
-      <h1>LabLens</h1>
-      <span id="estado-conexion" class="chip chip-neutro">Sin conectar</span>
-    </header>
+  <!-- Los iconos son SVG propios en un sprite: el diseño de Stitch usa Material
+       Symbols por CDN y la app tiene que verse igual sin internet. -->
+  <svg style="display: none" aria-hidden="true">
+    <defs>
+      <symbol id="i-inicio" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 10.5 12 3l9 7.5" /><path d="M5 9.5V21h14V9.5" /><path d="M10 21v-6h4v6" />
+      </symbol>
+      <symbol id="i-documento" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+        <path d="M14 3v5h5" /><path d="M9 13h6" /><path d="M9 17h4" />
+      </symbol>
+      <symbol id="i-analisis" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 20V10" /><path d="M10 20V4" /><path d="M16 20v-7" /><path d="M22 20H2" />
+      </symbol>
+      <symbol id="i-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 12a8 8 0 0 1-8 8H8l-5 3 1.5-4.5A8 8 0 0 1 13 4a8 8 0 0 1 8 8z" />
+      </symbol>
+      <symbol id="i-camara" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 8.5A2 2 0 0 1 5 6.5h1.8l1.2-2h8l1.2 2H19a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+        <circle cx="12" cy="13" r="3.5" />
+      </symbol>
+      <symbol id="i-corazon" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 21s-8-4.9-8-10.4A4.6 4.6 0 0 1 12 7a4.6 4.6 0 0 1 8 3.6C20 16.1 12 21 12 21z" />
+      </symbol>
+      <symbol id="i-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 12.5l5.5 5.5L20 7" />
+      </symbol>
+      <symbol id="i-alerta" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 3.5 22 20H2z" /><path d="M12 10v4.5" /><path d="M12 17.4h.01" />
+      </symbol>
+      <symbol id="i-duda" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="9" /><path d="M9.5 9.5a2.5 2.5 0 1 1 3.4 2.3c-.6.3-.9.8-.9 1.4v.4" />
+        <path d="M12 17h.01" />
+      </symbol>
+      <symbol id="i-persona" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="8" r="3.5" /><path d="M5 20c0-3.6 3.1-5.5 7-5.5s7 1.9 7 5.5" />
+      </symbol>
+      <symbol id="i-enviar" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 12 20 4l-7 16-2.5-6z" />
+      </symbol>
+      <symbol id="i-atras" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M15 5l-7 7 7 7" />
+      </symbol>
+      <symbol id="i-descargar" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 4v11" /><path d="M7.5 10.5 12 15l4.5-4.5" /><path d="M5 19h14" />
+      </symbol>
+      <symbol id="i-buscar" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="6.5" /><path d="M16 16l4.5 4.5" />
+      </symbol>
+      <symbol id="i-adelante" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 5l7 7-7 7" />
+      </symbol>
+      <symbol id="i-sube" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 19V6" /><path d="M6.5 11.5 12 6l5.5 5.5" />
+      </symbol>
+      <symbol id="i-baja" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 5v13" /><path d="M6.5 12.5 12 18l5.5-5.5" />
+      </symbol>
+      <symbol id="i-estable" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 12h14" />
+      </symbol>
+      <symbol id="i-ok-circulo" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="9" /><path d="M8 12.5l2.8 2.8L16 9.5" />
+      </symbol>
+      <symbol id="i-fuera-circulo" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="9" /><path d="M9 9l6 6" /><path d="M15 9l-6 6" />
+      </symbol>
+      <symbol id="i-sin-dato" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="9" /><path d="M8.5 12h7" />
+      </symbol>
+      <symbol id="i-gota" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 3s6 6.4 6 10.4A6 6 0 0 1 6 13.4C6 9.4 12 3 12 3z" />
+      </symbol>
+      <symbol id="i-ojo" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2.5 12S6 6 12 6s9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z" />
+        <circle cx="12" cy="12" r="2.8" />
+      </symbol>
+      <symbol id="i-info" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="9" /><path d="M12 11v5.5" /><path d="M12 7.8h.01" />
+      </symbol>
+    </defs>
+  </svg>
 
-    <!-- Paso 1: permisos -->
-    <section id="pantalla-inicio" class="panel">
-      <p class="intro">
-        Prueba local del escaner de documentos medicos. Al activar la camara el
-        navegador pedira permiso; hay que aceptarlo para continuar.
-      </p>
-      <ul class="lista">
-        <li>Coloca el documento sobre una superficie de color contrastado.</li>
-        <li>Encuadra el documento llenando el marco punteado.</li>
-        <li>Cuando el borde se ponga verde, el documento esta alineado.</li>
-        <li>Si no lo reconoce, activa <strong>Diagnostico</strong> y guarda un cuadro.</li>
-      </ul>
-      <button id="btn-activar" class="btn btn-principal">Activar camara</button>
-      <p id="error-camara" class="error oculto"></p>
-    </section>
+  <header class="barra-superior">
+    <button id="btn-atras" class="avatar oculto" aria-label="Volver">
+      <svg><use href="#i-atras" /></svg>
+    </button>
+    <div id="hueco-izq" style="width: 40px"></div>
+    <div class="marca">LabLens</div>
+    <button id="btn-perfil" class="avatar" aria-label="Usuario local">
+      <svg><use href="#i-persona" /></svg>
+    </button>
+  </header>
 
-    <!-- Usuario local: sin esto no se puede escribir en la base de datos -->
-    <section id="pantalla-usuario" class="panel oculto">
-      <h2>Usuario local</h2>
-      <p class="intro">
-        La base de datos no guarda nombres. Solo se piden la fecha de nacimiento
-        y el sexo, porque los rangos de referencia de la OMS dependen de la edad
-        y del sexo. El distrito es opcional.
-      </p>
-      <div class="controles">
-        <label>Fecha de nacimiento
-          <input type="date" id="inp-nacimiento" />
-        </label>
-        <label>Sexo
-          <select id="sel-sexo"></select>
-        </label>
-        <label>Distrito (opcional)
-          <input type="text" id="inp-distrito" placeholder="Ej. Callao" />
-        </label>
+  <main id="contenido">
+
+    <!-- ================= INICIO ================= -->
+    <section id="v-inicio" class="vista activa">
+      <div>
+        <h1 class="display-lg" id="saludo">Hola.</h1>
       </div>
-      <button id="btn-guardar-usuario" class="btn btn-principal">Guardar</button>
-      <p id="estado-usuario" class="estado-analisis"></p>
+
+      <div class="tarjeta-salud">
+        <div>
+          <p class="body-md">Estado de salud general</p>
+          <p class="headline-md" id="estado-salud" style="margin-top: 4px">Sin datos</p>
+          <p class="label-sm" id="estado-salud-nota" style="margin-top: 4px; opacity: 0.8">
+            Escanea un documento para empezar
+          </p>
+        </div>
+        <div class="icono-caja"><svg><use href="#i-corazon" /></svg></div>
+      </div>
+
+      <div class="seccion">
+        <h2 class="headline-sm">Acciones rápidas</h2>
+        <div class="acciones-rapidas">
+          <button class="btn btn-crema" data-ir="escanear">Escanear reporte médico</button>
+          <button class="btn btn-secundario" data-ir="asistente">Hablar con el asistente</button>
+        </div>
+      </div>
+
+      <div class="seccion" id="seccion-datos">
+        <h2 class="headline-sm">Datos sobre ti</h2>
+        <div id="datos-sobre-ti" class="lista-apretada"></div>
+      </div>
+
+      <div class="seccion" id="seccion-recientes">
+        <h2 class="headline-sm">Documentos recientes</h2>
+        <div class="carrusel" id="documentos-recientes"></div>
+      </div>
+
+      <p class="descargo">
+        LabLens muestra un índice orientativo de seguimiento a partir de tus
+        documentos. No es un diagnóstico ni reemplaza la consulta médica.
+      </p>
     </section>
 
-    <!-- Paso 2: camara -->
-    <section id="pantalla-camara" class="panel oculto">
-      <div class="controles">
-        <label>Formato
+    <!-- ================= ESCANEAR ================= -->
+    <section id="v-escanear" class="vista">
+      <h1 class="headline-lg">Escanear documento</h1>
+
+      <div class="visor" id="visor">
+        <video id="video" playsinline autoplay muted></video>
+        <canvas id="superposicion"></canvas>
+        <div class="visor-vacio" id="visor-vacio">
+          <span class="esquina si"></span><span class="esquina sd"></span>
+          <span class="esquina ii"></span><span class="esquina id"></span>
+          <p class="body-md">Coloca tu documento médico dentro del recuadro</p>
+          <svg><use href="#i-camara" /></svg>
+        </div>
+        <div id="pista" class="pista oculto">Buscando documento...</div>
+      </div>
+
+      <p id="error-camara" class="aviso-error oculto"></p>
+
+      <button id="btn-activar" class="btn btn-primario">
+        <svg><use href="#i-camara" /></svg> Activar cámara
+      </button>
+      <button id="btn-capturar" class="btn btn-primario oculto">
+        <svg><use href="#i-camara" /></svg> Tomar foto
+      </button>
+
+      <div class="rejilla-campos">
+        <label class="campo"><span>Formato</span>
           <select id="sel-formato"></select>
         </label>
-        <label>Realce
+        <label class="campo"><span>Realce</span>
           <select id="sel-modo">
             <option value="color">Color (sellos y firmas)</option>
             <option value="gris">Grises</option>
             <option value="bn">Blanco y negro</option>
           </select>
         </label>
-        <label id="envoltorio-camaras" class="oculto">Camara
+        <label class="campo oculto" id="envoltorio-camaras"><span>Cámara</span>
           <select id="sel-camara"></select>
         </label>
       </div>
 
-      <div class="visor">
-        <video id="video" playsinline autoplay muted></video>
-        <canvas id="superposicion"></canvas>
-        <div id="pista" class="pista">Buscando documento...</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 8px 20px">
+        <label class="interruptor"><input type="checkbox" id="chk-auto" />
+          <span>Captura automática al alinear</span></label>
+        <label class="interruptor"><input type="checkbox" id="chk-ajustar" checked />
+          <span>Ajustar al formato</span></label>
+        <label class="interruptor"><input type="checkbox" id="chk-diagnostico" />
+          <span>Diagnóstico</span></label>
       </div>
 
-      <div class="controles-inferior">
-        <label class="interruptor">
-          <input type="checkbox" id="chk-auto" />
-          <span>Captura automatica al alinear</span>
-        </label>
-        <label class="interruptor">
-          <input type="checkbox" id="chk-ajustar" checked />
-          <span>Ajustar al formato elegido</span>
-        </label>
-        <label class="interruptor">
-          <input type="checkbox" id="chk-diagnostico" />
-          <span>Diagnostico</span>
-        </label>
+      <pre id="panel-diagnostico" class="crudo oculto"></pre>
+      <button id="btn-diagnostico" class="btn btn-crema oculto">Guardar cuadro para diagnóstico</button>
+
+      <div class="tarjeta-crema">
+        <h3 class="label-md" style="margin-bottom: 12px">Tu documento será:</h3>
+        <div class="comprobacion">
+          <div><svg><use href="#i-ok" /></svg> Enderezado</div>
+          <div><svg><use href="#i-ok" /></svg> Analizado por IA</div>
+          <div><svg><use href="#i-ok" /></svg> Guardado localmente</div>
+          <div><svg><use href="#i-ok" /></svg> Añadido al historial</div>
+        </div>
       </div>
-
-      <pre id="panel-diagnostico" class="diagnostico oculto"></pre>
-      <button id="btn-diagnostico" class="btn btn-secundario oculto">
-        Guardar cuadro para diagnostico
-      </button>
-
-      <button id="btn-capturar" class="btn btn-principal btn-grande">Capturar</button>
     </section>
 
-    <!-- Paso 3: resultado -->
-    <section id="pantalla-resultado" class="panel oculto">
-      <h2>Documento enderezado</h2>
-      <img id="img-resultado" alt="Documento enderezado" />
-      <dl id="meta-resultado" class="meta"></dl>
+    <!-- ================= DOCUMENTOS ================= -->
+    <section id="v-documentos" class="vista">
+      <h1 class="headline-lg">Historial médico</h1>
+      <div id="lista-documentos" class="lista"></div>
+    </section>
 
-      <h3>Datos extraidos</h3>
-      <p id="estado-analisis" class="estado-analisis">Esperando...</p>
+    <!-- ================= ANALISIS (comparativa vs referencias) ================= -->
+    <section id="v-analisis" class="vista">
+      <h1 class="headline-lg">Análisis de salud</h1>
+      <label class="buscador">
+        <svg><use href="#i-buscar" /></svg>
+        <input type="text" id="inp-buscar-analisis" placeholder="Buscar biomarcador o examen..." />
+      </label>
+      <div id="banner-referencias"></div>
+      <p id="resumen-analisis" class="estado"></p>
+      <div id="grupos-analisis" class="lista"></div>
+      <p class="descargo">
+        La comparación usa los rangos de referencia cargados en la base, filtrados
+        por tu edad y sexo. Es un índice orientativo de seguimiento, no un
+        diagnóstico.
+      </p>
+    </section>
+
+    <!-- ================= DETALLE DE UN GRUPO ================= -->
+    <section id="v-detalle" class="vista">
+      <h1 class="headline-lg" id="titulo-detalle">Detalle</h1>
+      <div class="tarjeta-crema" id="resumen-detalle"></div>
+      <div class="seccion">
+        <h2 class="headline-sm">Tendencia en el tiempo</h2>
+        <div class="grafico" id="grafico-detalle"></div>
+      </div>
+      <div class="seccion">
+        <h2 class="headline-sm">Biomarcadores</h2>
+        <div class="rejilla-biomarcadores" id="rejilla-detalle"></div>
+      </div>
+    </section>
+
+    <!-- ================= DOCUMENTO (lectura de un escaneo) ================= -->
+    <section id="v-documento" class="vista">
+      <h1 class="headline-lg" id="titulo-documento">Documento</h1>
+      <p id="estado-documento" class="estado"></p>
+      <img id="img-resultado" class="imagen-documento oculto" alt="Documento enderezado" />
       <dl id="meta-informe" class="meta oculto"></dl>
-      <div id="tabla-envoltorio" class="tabla-envoltorio oculto">
-        <table id="tabla-resultados">
+      <div class="tabla-envoltorio oculto" id="tabla-envoltorio">
+        <table class="biomarcadores">
           <thead>
-            <tr>
-              <th>Biomarcador</th><th>Valor</th><th>Unidad</th><th>Rango</th><th></th>
-            </tr>
+            <tr><th>Biomarcador</th><th>Valor</th><th>Unidad</th><th>Referencia</th><th></th></tr>
           </thead>
           <tbody></tbody>
         </table>
       </div>
-      <details id="detalle-json">
-        <summary>Ver respuesta completa</summary>
-        <pre id="json-resultado"></pre>
-      </details>
-      <div class="fila-botones">
-        <button id="btn-nueva" class="btn btn-principal">Nueva captura</button>
-        <a id="enlace-descarga" class="btn btn-secundario" download>Descargar</a>
+      <div id="acciones-documento" class="oculto" style="display: flex; gap: 12px">
+        <button class="btn btn-primario" data-ir="escanear">Nueva captura</button>
+        <a id="enlace-descarga" class="btn btn-secundario" download>
+          <svg><use href="#i-descargar" /></svg> Descargar
+        </a>
       </div>
+      <details id="detalle-json" class="oculto">
+        <summary>Ver respuesta completa</summary>
+        <pre id="json-resultado" class="crudo"></pre>
+      </details>
+      <p class="descargo">
+        Los valores provienen de la lectura automática del documento. Verifícalos
+        contra el original antes de tomar cualquier decisión.
+      </p>
+    </section>
+
+    <!-- ================= ASISTENTE ================= -->
+    <section id="v-asistente" class="vista">
+      <h1 class="headline-lg">Asistente LabLens</h1>
+      <div class="tarjeta-crema">
+        <p class="body-md">
+          Esta pantalla todavía no tiene diseño en Stitch, solo un mockup. La sesión
+          no se guarda: al salir y volver, la conversación empieza de cero.
+        </p>
+      </div>
+      <div id="chat-mensajes" style="display: flex; flex-direction: column; gap: 12px"></div>
+      <div style="display: flex; gap: 8px; align-items: flex-end">
+        <textarea id="chat-entrada" rows="2" placeholder="Escribe tu pregunta..."
+                  style="background: var(--crema)"></textarea>
+        <button id="btn-enviar-chat" class="btn btn-primario" style="width: 56px; min-width: 56px; padding: 0">
+          <svg><use href="#i-enviar" /></svg>
+        </button>
+      </div>
+      <p class="descargo">
+        Pendiente de conectar. El asistente no debe dar diagnósticos: su rol es
+        explicar lo que ya está en tus documentos.
+      </p>
+    </section>
+
+    <!-- ================= USUARIO ================= -->
+    <section id="v-usuario" class="vista">
+      <h1 class="headline-lg">Usuario local</h1>
+      <div class="tarjeta">
+        <p class="body-md suave">
+          La base de datos no guarda nombres. Se piden la fecha de nacimiento y el
+          sexo, porque los rangos de referencia dependen de la edad y del sexo, y
+          el distrito donde vives: su altitud es la que ajusta la hemoglobina
+          segun la norma peruana (NTS 213). Sin distrito no hay ajuste.
+        </p>
+      </div>
+      <div class="rejilla-campos">
+        <label class="campo"><span>Fecha de nacimiento</span>
+          <input type="date" id="inp-nacimiento" /></label>
+        <label class="campo"><span>Sexo</span>
+          <select id="sel-sexo"></select></label>
+        <label class="campo"><span>Condición</span>
+          <select id="sel-condicion"></select></label>
+        <label class="campo"><span>Distrito donde vives</span>
+          <input type="text" id="inp-distrito" list="lista-distritos"
+                 placeholder="Escribe y elige de la lista" />
+          <datalist id="lista-distritos"></datalist></label>
+        <label class="campo"><span>Vives ahí desde (opcional)</span>
+          <input type="date" id="inp-residencia-desde" /></label>
+      </div>
+      <p class="body-sm suave" id="pista-distrito"></p>
+      <button id="btn-guardar-usuario" class="btn btn-primario">Guardar</button>
+      <p id="estado-usuario" class="estado"></p>
+      <dl id="meta-sistema" class="meta"></dl>
     </section>
   </main>
+
+  <nav class="nav-inferior">
+    <button data-ir="inicio" class="activa">
+      <svg><use href="#i-inicio" /></svg><span>Inicio</span>
+    </button>
+    <button data-ir="documentos">
+      <svg><use href="#i-documento" /></svg><span>Documentos</span>
+    </button>
+    <button data-ir="escanear">
+      <svg><use href="#i-camara" /></svg><span>Escanear</span>
+    </button>
+    <button data-ir="analisis">
+      <svg><use href="#i-analisis" /></svg><span>Análisis</span>
+    </button>
+    <button data-ir="asistente">
+      <svg><use href="#i-chat" /></svg><span>Asistente</span>
+    </button>
+  </nav>
 
   <script src="/estaticos/app.js"></script>
 </body>

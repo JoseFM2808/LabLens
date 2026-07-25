@@ -44,7 +44,7 @@ import json
 import uuid
 from pathlib import Path
 
-from . import basedatos
+from . import basedatos, referencia
 from .almacenamiento import DIR_CAPTURAS
 from .esquema import Informe, clave_biomarcador, distrito_probable
 
@@ -55,7 +55,25 @@ REGISTRO_INFORMES = DIR_INFORMES / "registro.jsonl"
 # ("un archivo unico por usuario").
 ID_USUARIO_LOCAL = "usuario-local"
 
-SEXOS_VALIDOS = ("femenino", "masculino", "otro", "no_especificado")
+# 'F' y 'M' no son un capricho de formato: es el valor con el que la NTS 213
+# estratifica los rangos en `rango_referencia.sexo`. Guardar "femenino" hacia que
+# ningun rango por sexo calzara y la app se quedaba sin poder evaluar nada.
+# 'otro' y 'no_especificado' se conservan como respuesta legitima: con ellos solo
+# aplican los rangos que no distinguen sexo, que es lo correcto y no un vacio.
+SEXOS_VALIDOS = ("F", "M", "otro", "no_especificado")
+SEXOS_LEGADO = {"femenino": "F", "masculino": "M"}
+
+# Condiciones de `rango_referencia.condicion` que aplican a una persona adulta.
+# 'general' es el valor por defecto y nunca se asume otro: decir "no gestante" es
+# una afirmacion clinica que solo la usuaria puede hacer.
+CONDICIONES_VALIDAS = (
+    "general",
+    "no_gestante",
+    "gestante_t1",
+    "gestante_t2",
+    "gestante_t3",
+    "puerpera",
+)
 
 
 def asegurar_directorios() -> None:
@@ -76,29 +94,78 @@ def usuario_local() -> dict | None:
 
 
 def guardar_usuario(
-    fecha_nacimiento: str, sexo: str, distrito_residencia: str | None = None
+    fecha_nacimiento: str,
+    sexo: str,
+    distrito_residencia: str | None = None,
+    condicion: str = "general",
+    residencia_desde: str | None = None,
 ) -> dict:
     """Crea o actualiza el usuario local.
 
     `fecha_nacimiento` y `sexo` son obligatorios porque los rangos de referencia
-    de la OMS dependen de edad y sexo. No se guarda ningun nombre.
+    dependen de edad y sexo. No se guarda ningun nombre.
+
+    El distrito se guarda dos veces a proposito: el texto tal como lo escribio la
+    persona (`distrito_residencia`) y la clave del padron
+    (`clave_distrito_residencia`), que es la que trae la altitud y habilita el
+    ajuste de la NTS 213. Si el texto no resuelve a un solo distrito, se levanta
+    ValueError con los candidatos: es la persona la que elige, no el programa.
     """
+    sexo = SEXOS_LEGADO.get(str(sexo).strip().lower(), str(sexo).strip())
     if sexo not in SEXOS_VALIDOS:
         raise ValueError(f"sexo debe ser uno de {SEXOS_VALIDOS}")
+    if condicion not in CONDICIONES_VALIDAS:
+        raise ValueError(f"condicion debe ser una de {CONDICIONES_VALIDAS}")
     if not fecha_nacimiento:
         raise ValueError("fecha_nacimiento es obligatoria")
 
+    texto_distrito = (distrito_residencia or "").strip() or None
     with basedatos.conectar() as conexion:
+        clave = None
+        if texto_distrito:
+            clave, candidatos = referencia.resolver_distrito(conexion, texto_distrito)
+            if clave is None and candidatos:
+                raise ValueError(
+                    f"'{texto_distrito}' existe en varios departamentos. "
+                    "Indique cual: " + ", ".join(candidatos)
+                )
+            if clave is None:
+                raise ValueError(
+                    f"'{texto_distrito}' no esta en el padron de distritos. "
+                    "Reviselo o dejelo vacio."
+                )
+            # La interfaz manda la clave completa cuando la persona elige de la
+            # lista ('PASCO|PASCO|CHAUPIMARCA'). Para mostrar se guarda el nombre
+            # del padron, que es el mismo dato sin la parte tecnica.
+            fila = conexion.execute(
+                "SELECT nombre FROM distrito WHERE clave_norm = ?", (clave,)
+            ).fetchone()
+            if fila:
+                texto_distrito = fila["nombre"]
+
         conexion.execute(
             """
-            INSERT INTO usuario (id, fecha_nacimiento, sexo, distrito_residencia)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO usuario (
+                id, fecha_nacimiento, sexo, distrito_residencia, condicion,
+                clave_distrito_residencia, residencia_desde
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 fecha_nacimiento = excluded.fecha_nacimiento,
                 sexo = excluded.sexo,
-                distrito_residencia = excluded.distrito_residencia
+                distrito_residencia = excluded.distrito_residencia,
+                condicion = excluded.condicion,
+                clave_distrito_residencia = excluded.clave_distrito_residencia,
+                residencia_desde = excluded.residencia_desde
             """,
-            (ID_USUARIO_LOCAL, fecha_nacimiento, sexo, distrito_residencia or None),
+            (
+                ID_USUARIO_LOCAL,
+                fecha_nacimiento,
+                sexo,
+                texto_distrito,
+                condicion,
+                clave,
+                (residencia_desde or "").strip() or None,
+            ),
         )
     return usuario_local()  # type: ignore[return-value]
 
@@ -110,18 +177,32 @@ def guardar_usuario(
 def resolver_biomarcador(conexion, nombre: str, unidad: str | None) -> int:
     """Devuelve el id del biomarcador, creandolo si no existe.
 
-    Busca por la clave normalizada contra `nombre` y contra cada entrada de
-    `sinonimos`. La tabla tiene decenas de filas, asi que un recorrido completo
-    es mas claro que inventar un indice sobre el JSON.
+    Tres intentos, en este orden:
 
-    Los que se crean aqui llevan ``sistema_corporal = 'sin_clasificar'``: es la
-    marca de que nadie los curo todavia. Quien complete el Dominio 3 puede
-    encontrarlos con:
+    1. **Catalogo curado** (`referencia.buscar_en_catalogo`): coincide el nombre
+       normalizado o un sinonimo **y** la unidad. Solo asi el valor entra con
+       rango de referencia, ajuste por altitud y cita normativa.
+    2. **Lo que el scanner ya habia descubierto**: coincide el nombre, sin exigir
+       unidad, porque esas filas las creo este mismo codigo con este mismo nombre.
+    3. **Fila nueva** marcada ``sin_clasificar``, que es la marca de que nadie la
+       curo todavia:
 
-        SELECT * FROM biomarcador WHERE sistema_corporal = 'sin_clasificar';
+           SELECT * FROM biomarcador WHERE matriz = 'sin_clasificar';
+
+    La unidad se exige en el paso 1 y no en el 2 a proposito. El catalogo tiene
+    `Glucosa` en sangre (mg/dl) y el scanner lee `Glucosa` de una tira de orina
+    sin unidad: son dos analitos distintos y engancharlos haria que la orina se
+    evalue contra el rango de la sangre.
     """
+    curado = referencia.buscar_en_catalogo(conexion, nombre, unidad)
+    if curado:
+        return int(curado["id"])
+
     clave = clave_biomarcador(nombre)
-    for fila in conexion.execute("SELECT id, nombre, sinonimos FROM biomarcador"):
+    for fila in conexion.execute(
+        "SELECT id, nombre, sinonimos FROM biomarcador "
+        "WHERE matriz IS NULL OR matriz = 'sin_clasificar'"
+    ):
         if clave_biomarcador(fila["nombre"]) == clave:
             return fila["id"]
         try:
@@ -133,12 +214,81 @@ def resolver_biomarcador(conexion, nombre: str, unidad: str | None) -> int:
 
     cursor = conexion.execute(
         """
-        INSERT INTO biomarcador (nombre, sistema_corporal, unidad_estandar, sinonimos)
-        VALUES (?, 'sin_clasificar', ?, ?)
+        INSERT INTO biomarcador (
+            nombre, sistema_corporal, unidad_estandar, sinonimos,
+            nombre_normalizado, matriz, categoria_examen
+        ) VALUES (?, 'sin_clasificar', ?, ?, ?, 'sin_clasificar', 'sin_clasificar')
         """,
-        (nombre, unidad or "sin_unidad", json.dumps([clave], ensure_ascii=False)),
+        (
+            nombre,
+            unidad or "sin_unidad",
+            json.dumps([clave], ensure_ascii=False),
+            referencia.normalizar_nombre(nombre),
+        ),
     )
     return int(cursor.lastrowid)
+
+
+# ==========================================================================
+# Ajuste por altitud (NTS 213 Tabla N.1)
+# ==========================================================================
+
+def aplicar_ajuste_altitud(conexion, estudio_id: str | None = None) -> int:
+    """Escribe `valor_ajustado` y `ajuste_id` en los valores que lo necesitan.
+
+    El factor se decide por la **altitud del distrito de residencia** del usuario
+    (NTS 213 §5.3.2), no por donde se hizo el analisis, y se **resta** al valor
+    observado (Tabla N.1, columna "Disminuir"). `valor_numerico` no se toca nunca:
+    el valor que decia el papel tiene que seguir siendo auditable.
+
+    Sin distrito, sin altitud o por debajo de 500 msnm no hay tramo que aplicar y
+    las dos columnas quedan en NULL, que es lo que la interfaz lee para declarar
+    que no se pudo ajustar.
+
+    Con `estudio_id` recalcula solo ese estudio; sin el, todos. Devuelve cuantos
+    valores quedaron con ajuste.
+    """
+    filtro = "AND estudio_id = ?" if estudio_id else ""
+    parametros = (estudio_id,) if estudio_id else ()
+
+    conexion.execute(
+        f"UPDATE valor_extraido SET valor_ajustado = NULL, ajuste_id = NULL "
+        f"WHERE 1 = 1 {filtro}",
+        parametros,
+    )
+    conexion.execute(
+        f"""
+        UPDATE valor_extraido
+           SET ajuste_id = (
+                   SELECT a.id
+                     FROM estudio e
+                     JOIN documento d ON d.id = e.documento_id
+                     JOIN usuario u   ON u.id = d.usuario_id
+                     JOIN distrito g  ON g.clave_norm = u.clave_distrito_residencia
+                     JOIN ajuste_altitud a
+                          ON a.biomarcador_id = valor_extraido.biomarcador_id
+                         AND a.factor_ajuste > 0
+                         AND g.altitud_msnm BETWEEN a.altitud_min_msnm AND a.altitud_max_msnm
+                    WHERE e.id = valor_extraido.estudio_id
+               )
+         WHERE valor_numerico IS NOT NULL {filtro}
+        """,
+        parametros,
+    )
+    conexion.execute(
+        f"""
+        UPDATE valor_extraido
+           SET valor_ajustado = ROUND(
+                   valor_numerico - (SELECT factor_ajuste FROM ajuste_altitud
+                                      WHERE id = valor_extraido.ajuste_id), 2)
+         WHERE ajuste_id IS NOT NULL {filtro}
+        """,
+        parametros,
+    )
+    return conexion.execute(
+        f"SELECT COUNT(*) AS n FROM valor_extraido WHERE ajuste_id IS NOT NULL {filtro}",
+        parametros,
+    ).fetchone()["n"]
 
 
 # ==========================================================================
@@ -189,6 +339,14 @@ def _guardar_en_bd(informe: Informe) -> dict:
     distrito = distrito_probable(informe.ubicacion)
     conexion = basedatos.conectar()
     try:
+        # Distrito primero y establecimiento despues, buscado dentro de ese
+        # distrito: al reves, un nombre repetido en otra region mete el documento
+        # en el distrito equivocado. Ver referencia.resolver_establecimiento.
+        clave_norm, _ = referencia.resolver_distrito(conexion, distrito, informe.ubicacion)
+        establecimiento = referencia.resolver_establecimiento(
+            conexion, informe.centro_medico, clave_norm
+        )
+
         with conexion:  # transaccion: o entra todo, o no entra nada
             # Reprocesar: se limpian los valores y estudios anteriores.
             conexion.execute(
@@ -204,12 +362,14 @@ def _guardar_en_bd(informe: Informe) -> dict:
                 """
                 INSERT INTO documento (
                     id, usuario_id, tipo, fuente_obtencion, institucion_nombre,
-                    institucion_id, distrito, distrito_confianza, fecha_documento,
-                    archivo_ruta, estado_extraccion
-                ) VALUES (?, ?, 'laboratorio', 'foto', ?, NULL, ?, ?, ?, ?, ?)
+                    institucion_id, distrito, clave_norm, distrito_confianza,
+                    fecha_documento, archivo_ruta, estado_extraccion
+                ) VALUES (?, ?, 'laboratorio', 'foto', ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     institucion_nombre = excluded.institucion_nombre,
+                    institucion_id = excluded.institucion_id,
                     distrito = excluded.distrito,
+                    clave_norm = excluded.clave_norm,
                     distrito_confianza = excluded.distrito_confianza,
                     fecha_documento = excluded.fecha_documento,
                     archivo_ruta = excluded.archivo_ruta,
@@ -219,8 +379,10 @@ def _guardar_en_bd(informe: Informe) -> dict:
                     informe.id,
                     usuario["id"],
                     informe.centro_medico,
+                    establecimiento["id"] if establecimiento else None,
                     distrito,
-                    "extraido" if distrito else "no_disponible",
+                    clave_norm,
+                    "extraido" if clave_norm else "no_disponible",
                     informe.fecha_documento,
                     f"capturas/{informe.captura_archivo}",
                     "procesado" if informe.estado == "ok" else "error",
@@ -268,6 +430,7 @@ def _guardar_en_bd(informe: Informe) -> dict:
                     ),
                 )
             despues = conexion.execute("SELECT COUNT(*) AS n FROM biomarcador").fetchone()["n"]
+            ajustados = aplicar_ajuste_altitud(conexion, estudio_id)
 
         return {
             "guardado": True,
@@ -275,6 +438,7 @@ def _guardar_en_bd(informe: Informe) -> dict:
             "estudio_id": estudio_id,
             "valores": len(informe.resultados),
             "biomarcadores_nuevos": despues - antes,
+            "valores_ajustados_por_altitud": ajustados,
         }
     finally:
         conexion.close()

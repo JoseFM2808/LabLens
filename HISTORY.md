@@ -476,3 +476,382 @@ pantalla; se corrige con `LABLENS_MODELO_VISION` sin tocar codigo.
 ### Dependencias
 Se agrego `requests>=2.32` (instalado: 2.34.2). Se descarto `pandas`, que en el
 prototipo solo servia para `display`.
+
+---
+
+## 2026-07-25 - v0.4.0 - Migracion de la interfaz al diseno de Stitch
+
+### Que se hizo
+La interfaz paso de una pantalla unica en tema oscuro a la app de 5 vistas del
+diseno de Stitch, en tema claro con la paleta sage green.
+
+| Antes | Ahora |
+|---|---|
+| Una pantalla (permisos -> camara -> resultado) | 5 vistas con navegacion inferior |
+| Tema oscuro propio | Tema claro de Stitch (`--primary #4d6700`, crema `#f8f5d7`) |
+| `estilos.css` (eliminado) | `disenio.css` con los tokens del DESIGN.md |
+| Sin historial visible | Vistas Inicio, Documentos y Analisis leyendo de la base |
+| Marco guia punteado blanco | Esquinas de 3 px en verde primario, como pide el DESIGN.md |
+
+### El MCP de Stitch no se pudo usar de forma nativa
+Queda instalado (scope de usuario, `~/.claude.json`) y conecta, pero Claude Code
+no carga sus herramientas:
+
+    can't resolve reference #/$defs/ScreenInstance from id #
+
+`create_design_system_from_design_md` y `apply_design_system` apuntan a un
+`$defs` que su propio esquema no declara (solo declara `SelectedScreenInstance`).
+Es un error del servidor de Stitch; Claude Code valida todos los esquemas al
+cargar y descarta las 15 herramientas por esa referencia rota.
+
+Solucion: `herramientas/stitch.py`, un cliente que habla el mismo protocolo por
+HTTP sin pasar por esa validacion. Con el se bajo el diseno a `UI/stitch/`
+(DESIGN.md, 7 pantallas con HTML y captura). Cuando Google lo corrija, el cliente
+propio se puede borrar.
+
+Detalle que hace perder tiempo: `get_project` pide el id **con** prefijo
+(`projects/123`) y `list_screens` / `get_screen` lo piden **sin** prefijo. Con el
+valor mal formado el servicio responde `Request contains an invalid argument` sin
+decir cual. `Stitch.solo_id()` lo normaliza.
+
+### Por que no se uso Tailwind
+Las pantallas de Stitch traen `cdn.tailwindcss.com`, Google Fonts y Material
+Symbols. Se descarto el CDN por dos razones: la app se abre desde el movil por IP
+en la red local y no debe depender de internet para verse bien, y el CDN de
+Tailwind esta pensado para desarrollo, no para servir.
+
+En su lugar `disenio.css` tiene los mismos tokens como variables CSS y clases
+propias. Manrope se pide a Google Fonts pero con respaldo del sistema: sin
+internet solo cambia la tipografia. Los iconos son un sprite SVG propio
+incrustado en el HTML, asi que no dependen de nada externo.
+
+### Archivos
+| Archivo | Estado |
+|---|---|
+| `app/estaticos/disenio.css` | nuevo: tokens + componentes |
+| `app/estaticos/index.html` | reescrito: shell de 5 vistas + sprite de iconos |
+| `app/estaticos/app.js` | reescrito: router + vistas, conservando toda la camara |
+| `app/estaticos/estilos.css` | eliminado (quedo sin referencias) |
+| `herramientas/stitch.py` | nuevo: cliente MCP de Stitch |
+| `UI/stitch/` | nuevo: diseno bajado (DESIGN.md, html, capturas, LEEME.md) |
+
+### Vistas
+| Vista | Que muestra | De donde |
+|---|---|---|
+| Inicio | Saludo por hora, estado de salud, acciones rapidas, "Datos sobre ti", documentos recientes | `/api/informes` + `/api/capturas/{id}/datos` |
+| Escanear | Camara con esquinas guia, formato, realce, diagnostico | WebSocket + `/api/capturar` |
+| Documentos | Historial completo con institucion, fecha, distrito | `/api/informes` |
+| Analisis | Imagen enderezada, metadatos y tabla de biomarcadores | `/api/capturas/{id}/datos` |
+| Asistente | Placeholder marcado como no conectado | local |
+| Usuario | Alta del usuario local + estado del sistema | `/api/usuario`, `/api/basedatos` |
+
+"Usuario" no esta en la barra inferior: se llega por el avatar. Si no hay usuario
+configurado, la app abre ahi, porque sin eso nada entra a la base de datos.
+
+### Ciclo de vida de la camara
+Al salir de "Escanear" se apaga el flujo (`getTracks().stop()`), se cierra el
+WebSocket y se cortan los bucles con el contador de generacion. Al volver se
+vuelve a pedir la camara. Sin esto el movil se calienta y gasta bateria con la
+camara encendida de fondo.
+
+### Un error de conteo que las pruebas destaparon
+La primera version mostraba "22 valores dentro de rango" para un examen de orina
+real. Falso: esos 22 valores llegaron **sin rango de referencia** en el documento,
+asi que `fuera_de_rango` era `null` (indeterminado), no `0`. Contarlos como
+"dentro de rango" es afirmar algo que no se sabe, y en datos de salud eso importa.
+
+Ahora se cuentan tres grupos -dentro, fuera, sin referencia- tanto en la tarjeta
+de estado de Inicio como en el encabezado de Analisis. Con esos datos reales el
+texto correcto es "22 biomarcadores · ninguno traia rango de referencia en el
+documento".
+
+Esto refuerza lo ya anotado en v0.3.0: mientras `rango_referencia` (Dominio 2,
+OMS/MINSA) este vacio, LabLens solo puede comparar contra el rango impreso en el
+papel. Los documentos del MINSA revisados no lo traen.
+
+### Pruebas realizadas
+Con documentos reales ya escaneados (12 documentos en la base):
+- Inicio: saludo, estado de salud, 5 filas de datos, 8 documentos en el carrusel.
+- Documentos: 12 tarjetas con institucion y fecha.
+- Analisis: abre desde el historial, 22 filas de biomarcadores, imagen del
+  documento enderezado, metadatos y descarga.
+- Escanear: esquinas verdes, controles y estado vacio correctos.
+- Navegacion entre las 5 vistas y avatar -> Usuario.
+- Sin errores en consola.
+
+### Pendiente
+- El asistente no esta conectado (la documentacion de UI dice que solo hay
+  mockup, sin diseno).
+- Falta probar la camara desde el movil con la interfaz nueva.
+
+---
+
+## 2026-07-25 - v0.5.0 - Analisis como comparativa, y pulido de la interfaz
+
+### Correccion de concepto
+En la v0.4.0 la vista "Analisis" mostraba la lectura de **un** documento. Esta
+mal: Analisis es la **comparativa del historial completo del usuario contra los
+rangos de referencia** (OMS / MINSA), que es lo que plantean tanto
+`qhali-estructura-base-datos.md` ("Consulta clave: ultimo scan vs referencia")
+como la pantalla "Analisis de Salud" del diseno de Stitch.
+
+Quedaron separadas:
+
+| Vista | Que es |
+|---|---|
+| **Analisis** | Comparativa agregada. Agrupa por sistema corporal, muestra % dentro de rango, tendencia y permite buscar. |
+| **Detalle** | Un grupo abierto: tarjeta de estado, grafico de tendencia y una tarjeta por biomarcador con su rango y estado. |
+| **Documento** | La lectura de un escaneo: imagen enderezada, metadatos y tabla. Se llega desde Documentos. |
+
+### `app/comparativa.py` (nuevo)
+Cruza todas las mediciones del usuario con `rango_referencia` filtrando por edad,
+sexo y condicion, y agrupa por sistema corporal.
+
+| Funcion | Que hace |
+|---|---|
+| `analisis_usuario` | Entrada publica: devuelve usuario, estado de las referencias y grupos. |
+| `_referencia` | Rango aplicable segun sexo, edad y condicion. |
+| `_estado` | `dentro` / `fuera` / `sin_referencia` / `sin_valor`. |
+| `_tendencia` | Direccion del cambio entre las dos ultimas mediciones. |
+| `_mejora` | Si el ultimo valor se acerco o alejo del centro del rango. |
+| `_columnas` | Detecta en caliente si la base es v0.1 (edad en anios) o v1.0 (edad en dias). |
+
+Se detecta el esquema en caliente porque `rango_referencia` convive en dos
+formas: la v0.1 con la edad en anios y la v1.0 con `edad_min_dias`, `condicion`,
+`tipo_limite` y `prioridad`.
+
+**No se usa la vista `v_evaluacion`** del equipo aunque existe: filtra por
+`valor BETWEEN valor_min AND valor_max`, o sea solo devuelve los valores que
+**si** estan dentro de rango. Con eso no se distingue "fuera de rango" de "no
+habia rango aplicable", y la interfaz necesita esa diferencia. Conviene alinearlo
+con quien la escribio.
+
+Endpoint nuevo: `GET /api/analisis`.
+
+### Un arranque roto que habia que reparar
+`basedatos.py` ejecutaba `DDL_V1` antes de `_agregar_columnas`, pero `DDL_V1`
+crea `ix_estab_nombre` sobre `establecimiento_salud.nombre_normalizado`, que es
+una columna que agrega `_agregar_columnas`. Sobre la base que ya existia el
+servidor no arrancaba:
+
+    sqlite3.OperationalError: no such column: nombre_normalizado
+
+Arreglado llamando a `_agregar_columnas` **antes y despues** de `DDL_V1`: es
+idempotente, la primera pasada amplia lo que ya existia y la segunda lo que
+acaba de nacer.
+
+### Pulido de la interfaz
+- **Iconos**: `.avatar svg` no tenia tamano y el `<use>` heredaba el viewBox, asi
+  que el icono se desbordaba del circulo. Fijado a 22 px.
+- **Tipografia**: `display-lg` y `headline-lg` pasaron a `clamp()`. Con tamano
+  fijo el saludo se cortaba en pantallas de 360 px.
+- **Acciones rapidas**: de flex a grid de dos columnas, con altura automatica y
+  salto de linea permitido. El texto no cabia en una linea en moviles chicos.
+- **Espaciado**: se saco el `margin-bottom` de cada hijo y el espacio pasa al
+  contenedor (`.lista`, `.lista-apretada`).
+- **Estilos en linea**: la lista de documentos se armaba con `style="..."` desde
+  JS; ahora es la clase `.tarjeta-lista`, con truncado del titulo y flecha.
+- **Componentes nuevos**: `.buscador`, `.tarjeta-grupo`, `.anillo`, `.tendencia`,
+  `.rejilla-biomarcadores`, `.tarjeta-biomarcador`, `.grafico`, `.banner`,
+  `.comprobacion`.
+- **Iconos nuevos** en el sprite: buscar, adelante, sube, baja, estable,
+  ok-circulo, fuera-circulo, sin-dato, gota, ojo, info.
+
+### Un accidente de codificacion, y como se reparo
+Un `Get-Content -Raw` + `Set-Content -Encoding utf8` sobre `app.js` para renombrar
+simbolos dejo el archivo en UTF-8 doble (`diseño` -> `diseÃ±o`). Se reparo con un
+round-trip Latin-1 sobre los bytes. Efecto secundario: los caracteres fuera de
+Latin-1 que ya estaban (`…`, `–`, el BOM) no sobrevivieron y quedaron como `?`;
+se reemplazaron por equivalentes ASCII.
+
+Para editar archivos con acentos, usar la herramienta de edicion, no
+`Get-Content`/`Set-Content` de PowerShell 5.1.
+
+### Estado real de los datos
+La carga de referencia ya corrio: **111 rangos**, 65 atribuidos a MINSA y 46
+todavia como `POR_DEFINIR` (sin organismo asignado, no se pueden citar). La
+interfaz lo declara en un banner y en cada tarjeta dice "fuente sin citar" en vez
+de mostrar `POR_DEFINIR` como si fuera el nombre de una fuente.
+
+### Pruebas realizadas
+Con los datos reales del usuario (32 biomarcadores, 90 mediciones, 36 anios, F):
+
+| Grupo | Resultado |
+|---|---|
+| Bioquimica | 50% - Colesterol Total 185 mg/dL (rango 0-199) **dentro**; Trigliceridos 210 mg/dL (rango 0-159) **fuera** |
+| Hematologia | 100% - Hemoglobina dentro de rango |
+| Sin clasificar | 29 biomarcadores medidos, sin rango con el que comparar |
+
+Navegacion Analisis -> Detalle -> volver, buscador, y las tarjetas de biomarcador
+con su marca de estado. Sin errores en consola.
+
+### Pendiente
+- Los 29 biomarcadores "sin clasificar" no calzan con el catalogo curado: hay que
+  mapear los nombres que devuelve Gemma (VOLUMEN, DENSIDAD, REACCION...) contra
+  `biomarcador.sinonimos` para que entren a su sistema y tengan rango.
+- El grafico de tendencia necesita dos mediciones del mismo biomarcador; hoy casi
+  todas tienen una sola.
+- Alinear `v_evaluacion` para que permita distinguir "fuera" de "sin referencia".
+
+## Carga de la base validada del equipo y usuario de relleno
+
+Se cargaron en `datos/qhali.sqlite3` los datos que el equipo validó en
+`BasedeDatos_Preparada/` y se sembró un usuario de relleno para poder probar y
+demostrar el ajuste por altitud sin escanear nada.
+
+### Migración aditiva, no reemplazo
+
+La base validada es la v1.0 y la de la app era la v0.1, y no son compatibles
+columna a columna: el distrito pasa de texto libre a tabla propia, las edades de
+años a días, los rangos ganan `condicion`, `tipo_limite` y severidad. Reemplazar
+el esquema obligaba a reescribir de golpe todo lo que ya consultaba la app y a
+botar los escaneos existentes, con el servidor corriendo.
+
+Se optó por ampliar: `app/basedatos.py` crea las tablas nuevas (`distrito`,
+`alias_distrito`, `ajuste_altitud`, `umbral_alerta`, `codigo_cie10`), agrega con
+`ALTER TABLE` las columnas que la v1.0 trae de más y crea la vista
+`v_evaluacion`. Las columnas de la v0.1 quedan como compatibilidad. Total: 19
+tablas y una vista, 0 escaneos perdidos.
+
+Dos diferencias obligadas frente a `schema.sql`, por límites de SQLite: una
+columna agregada con `REFERENCES` no puede ser NOT NULL (así que
+`establecimiento_salud.clave_norm` es nulable y la carga la llena siempre), y los
+índices UNIQUE se crean después de la carga.
+
+### `herramientas/cargar_referencia.py`
+
+Respalda en `datos/respaldos/` con la API de respaldo de SQLite (no una copia de
+archivo: con WAL el `.sqlite3` suelto puede quedar sin los últimos cambios), abre
+la base del equipo en **solo lectura**, recarga las 13 tablas de referencia,
+reengancha el dominio del usuario y verifica con `foreign_key_check`. Idempotente.
+
+`biomarcador` es la única tabla de referencia que no se puede borrar y recargar:
+sus ids ya estaban referenciados por los 90 valores del scanner y los ids de la
+base validada son otros. Se fusiona por nombre normalizado **y unidad**: los 45
+curados entraron, 3 se fusionaron con filas que el scanner había creado solo
+(Hemoglobina, Colesterol total, Trigliceridos) y sus mediciones quedaron
+enganchadas al catálogo sin tocar `valor_extraido`.
+
+La unidad es parte del criterio a propósito. `Hematíes` con unidad `/campo` es
+sedimento urinario, no el hematíe del hemograma (`X10^6/uL`); `Glucosa` sin unidad
+viene de una tira de orina, no de la glucosa en sangre (`mg/dl`). Fusionarlos por
+nombre los habría puesto a evaluarse contra el rango equivocado. Los 29 que no
+calzaron quedan con `matriz = 'sin_clasificar'` y el script los lista.
+
+### Dos errores propios corregidos durante la carga
+
+1. **Desempate de distritos homónimos.** El membrete `"Av. Saenz Pena 234 -
+   Bellavista, Callao"` no resolvía: hay cuatro Bellavista y el filtro por
+   departamento/provincia dejaba dos, porque la provincia de San Martín también
+   se llama Bellavista y coincidía con el propio nombre del distrito. Se saca el
+   nombre del distrito del texto antes de buscar la pista.
+
+2. **Inferir el distrito desde la institución: apagado.** Buscar el
+   establecimiento solo por nombre en un padrón nacional de 26 798 registros dio
+   un homónimo de otra región: `LABORATORIO CLINICO SAN MARTIN` (Bellavista,
+   Callao) coincidió exacto con uno del mismo nombre en Yurimaguas, Loreto, y el
+   documento quedó asignado a un distrito a 182 msnm. Ahora el establecimiento se
+   busca **dentro** del distrito ya resuelto. La ruta inversa queda apagada hasta
+   que el match use la dirección o el código único: sin eso no es una inferencia,
+   es una coincidencia de nombre.
+
+### `herramientas/sembrar_usuario_demo.py`
+
+`usuario-relleno`: mujer de 32 años, no gestante, residente en Chaupimarca (Cerro
+de Pasco, 4 373 msnm) desde 2025-09-01. Tres documentos: dos laboratorios
+separados cuatro meses y un control de signos vitales. 49 valores.
+
+```
+Hemoglobina 13.8 g/dl (marzo) -> 10.9 -> anemia MODERADA
+Hemoglobina 14.6 g/dl (julio) -> 11.7 -> anemia LEVE      (mejora)
+Ferritina    11.5 ug/L        -> deficiencia (NTS 213 Tabla N.14)
+Presión 128/82, SatO2 91%, perímetro 84 cm -> disparan umbral_alerta
+```
+
+Los ids son `uuid5`, así que volver a sembrar no duplica nada. `--borrar` lo saca
+sin tocar el resto. No se inventa `confianza_extraccion` (queda NULL, igual que en
+los escaneos reales) ni los biomarcadores `derivado = 1` (IMC, índices, % de
+grasa): se calculan, y no hay peso ni talla de dónde calcularlos.
+
+La saturación de 91% está puesta a propósito: a 4 373 msnm es esperable, pero el
+rango cargado vale a nivel del mar y la base lo declara en el mensaje de su
+alerta. Es el pendiente abierto N.5 de la base validada, y ese valor lo deja a la
+vista en la demo.
+
+### Tres incoherencias que la carga dejó al descubierto en `comparativa.py`
+
+Con `rango_referencia` vacía nada de esto se notaba. Con 111 rangos cargados, sí:
+
+1. **Ganaba el rango de anemia severa.** La NTS 213 carga cuatro filas por grupo
+   (normal / leve / moderada / severa) y todas pasan los mismos filtros de sexo,
+   edad y condición. Sin desempate ganaba la primera por rowid, la de severa
+   (0-8 g/dl), y una hemoglobina sana salía "fuera de rango" contra un rango que
+   no era el normal. Se ordena por `clasificacion = 'normal'` primero.
+
+2. **El desempate por autoridad no se aplicaba.** `prioridad`, `organismo` y
+   `cita` están en `fuente_referencia`, no en `rango_referencia`, y se estaban
+   buscando entre las columnas de `rango_referencia`: la comprobación daba siempre
+   falso. Resultado: la hemoglobina de una mujer adulta se comparaba contra el
+   panel de laboratorio sin cita (11-16 g/dl) en vez de contra la NTS 213 (12 g/dl
+   o más), y **la misma medición salía "normal" en Análisis y "anemia leve" en
+   `v_evaluacion`**. Es exactamente el conflicto que la base validada resolvió con
+   `fuente_referencia.prioridad`. Se piden esas tres columnas con alias.
+
+3. **La comparación era contra el valor crudo.** Análisis ignoraba el ajuste por
+   altitud, así que 13.8 g/dl en Cerro de Pasco aparecía "dentro". Ahora se compara
+   el valor ajustado, el medido se conserva al lado en `evaluado`, y la respuesta
+   trae `estado_ajuste` (`sin_distrito` / `sin_altitud` / `sin_ajuste` /
+   `ajustado_por_altitud`) para que la interfaz diga por qué no ajustó.
+
+De paso, `_mejora` promediaba `valor_min` y `valor_max` para sacar un centro; con
+los rangos abiertos de la v1.0 (un piso "12 o más" se carga como 12 a
+9 000 000 000) el centro salía absurdo y cualquier subida contaba como mejora. Con
+límite abierto ahora se mira la dirección.
+
+### Sexo y condición
+
+`usuario.sexo` guardaba `"femenino"` y los rangos de la NTS 213 usan `'F'`/`'M'`:
+ningún rango por sexo calzaba. Ahora se guarda `F`/`M`, con `"femenino"` y
+`"masculino"` aceptados como entrada antigua, y el usuario que ya existía se
+migró. `'otro'` y `'no_especificado'` siguen siendo respuesta válida: con ellos
+solo aplican los rangos que no distinguen sexo, que es lo correcto.
+
+Se agregó `condicion`, obligatoria para los rangos de mujeres adultas. Sin
+declararla no aplica ninguna tabla de la NTS 213 y se cae al panel sin cita. El
+valor por defecto sigue siendo `general`: decir "no gestante" es una afirmación
+clínica que solo la usuaria puede hacer.
+
+### Distrito en la pantalla de usuario
+
+El campo pasó de texto libre a lista del padrón (`GET /api/distritos?q=`), con
+departamento, provincia y altitud, porque el nombre suelto no alcanza: hay cuatro
+Bellavista y solo una está a 13 msnm. Si el texto es ambiguo, la respuesta es 400
+con los candidatos y elige la persona. Se agregó también "vives ahí desde", que es
+el dato que la NTS 213 §5.3.2 pide para el ajuste (residencia de los últimos 4
+meses).
+
+### Verificacion ejecutada
+
+```
+claves ajenas huerfanas .................. 0
+integrity_check .......................... ok
+indices UNIQUE creados ................... ux_fuente_dataset, ux_estab_codigo, ux_biomarcador
+distrito ambiguo ......................... 400 con los 4 candidatos
+distrito inexistente ..................... 400
+sexo "femenino" + clave de distrito ...... guarda F + CALLAO|CALLAO|BELLAVISTA
+relleno: Hb 14.6 -> 11.7 vs MINSA >= 12 .. fuera, mejora (coincide con v_evaluacion: leve)
+usuario local (Callao, 27 msnm) ........... estado_ajuste = sin_ajuste
+```
+
+### Pendiente
+
+- Curar los 29 biomarcadores del scanner: mapearlos al catálogo agregando sus
+  nombres a `biomarcador.sinonimos` **con la unidad correcta**, o crearlos como
+  filas propias de matriz `orina` cuando sean de tira reactiva.
+- `v_evaluacion` solo devuelve los valores que caen dentro de un tramo definido:
+  de los 49 del relleno trae 41. Los 8 que faltan son justamente los que están
+  fuera de rango. Para la interfaz se usa `comparativa.py`, que sí distingue
+  "fuera" de "sin referencia"; conviene alinear la vista con quien la escribió.
+- Los 46 rangos `POR_DEFINIR` siguen sin organismo: no se pueden citar y no
+  deberían entrar a ningún índice ponderado.
+- `peso_ponderacion` sigue vacía. Es correcto: sin cita, el peso no entra.

@@ -1,0 +1,89 @@
+{
+  "proyecto": "17237519883750637887",
+  "pantallas": [
+    {
+      "orden": 1,
+      "titulo": "Dashboard Principal",
+      "id": "c655cce74bcd4ee7a46c820a240bc2bc",
+      "dispositivo": "MOBILE",
+      "ancho": "780",
+      "alto": "2600",
+      "html": "html/01_dashboard-principal.html",
+      "html_bytes": 15907,
+      "captura": "capturas/01_dashboard-principal.png",
+      "captura_bytes": 33065
+    },
+    {
+      "orden": 2,
+      "titulo": "Asistente LabLens",
+      "id": "41885a438c1b4858a2fe5fbcb06f9f8a",
+      "dispositivo": "MOBILE",
+      "ancho": "780",
+      "alto": "1768",
+      "html": "html/02_asistente-lablens.html",
+      "html_bytes": 21449,
+      "captura": "capturas/02_asistente-lablens.png",
+      "captura_bytes": 39374
+    },
+    {
+      "orden": 3,
+      "titulo": "Detalle de Análisis",
+      "id": "9d465d276d44447980ae4e2468ab224c",
+      "dispositivo": "MOBILE",
+      "ancho": "780",
+      "alto": "2484",
+      "html": "html/03_detalle-de-analisis.html",
+      "html_bytes": 14653,
+      "captura": "capturas/03_detalle-de-analisis.png",
+      "captura_bytes": 38900
+    },
+    {
+      "orden": 4,
+      "titulo": "Historial Médico",
+      "id": "d933e5bd84684e179dfacfa01bbc298b",
+      "dispositivo": "MOBILE",
+      "ancho": "780",
+      "alto": "1768",
+      "html": "html/04_historial-medico.html",
+      "html_bytes": 12085,
+      "captura": "capturas/04_historial-medico.png",
+      "captura_bytes": 26516
+    },
+    {
+      "orden": 5,
+      "titulo": "Historial Médico (Con Contenido)",
+      "id": "b805badb7b72415c8a7dce2854b85ae0",
+      "dispositivo": "MOBILE",
+      "ancho": "780",
+      "alto": "2212",
+      "html": "html/05_historial-medico-con-contenido.html",
+      "html_bytes": 15921,
+      "captura": "capturas/05_historial-medico-con-contenido.png",
+      "captura_bytes": 52246
+    },
+    {
+      "orden": 6,
+      "titulo": "Escanear Documento",
+      "id": "c107a812bb7d4dac98cd4c9fd5d3a14c",
+      "dispositivo": "MOBILE",
+      "ancho": "780",
+      "alto": "1864",
+      "html": "html/06_escanear-documento.html",
+      "html_bytes": 11327,
+      "captura": "capturas/06_escanear-documento.png",
+      "captura_bytes": 28374
+    },
+    {
+      "orden": 7,
+      "titulo": "Análisis de Salud",
+      "id": "fbebe26f48a04bc8b3feac65439d88f6",
+      "dispositivo": "MOBILE",
+      "ancho": "780",
+      "alto": "2484",
+      "html": "html/07_analisis-de-salud.html",
+      "html_bytes": 16020,
+      "captura": "capturas/07_analisis-de-salud.png",
+      "captura_bytes": 35290
+    }
+  ]
+}

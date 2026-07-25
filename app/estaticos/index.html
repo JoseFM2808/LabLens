@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b1220" />
+  <title>LabLens - Escaner de documentos medicos</title>
+  <link rel="stylesheet" href="/estaticos/estilos.css" />
+</head>
+<body>
+  <main id="app">
+    <header class="barra">
+      <h1>LabLens</h1>
+      <span id="estado-conexion" class="chip chip-neutro">Sin conectar</span>
+    </header>
+
+    <!-- Paso 1: permisos -->
+    <section id="pantalla-inicio" class="panel">
+      <p class="intro">
+        Prueba local del escaner de documentos medicos. Al activar la camara el
+        navegador pedira permiso; hay que aceptarlo para continuar.
+      </p>
+      <ul class="lista">
+        <li>Coloca el documento sobre una superficie de color contrastado.</li>
+        <li>Encuadra el documento dentro del marco punteado.</li>
+        <li>Cuando el borde se ponga verde, el documento esta alineado.</li>
+      </ul>
+      <button id="btn-activar" class="btn btn-principal">Activar camara</button>
+      <p id="error-camara" class="error oculto"></p>
+    </section>
+
+    <!-- Paso 2: camara -->
+    <section id="pantalla-camara" class="panel oculto">
+      <div class="controles">
+        <label>Formato
+          <select id="sel-formato"></select>
+        </label>
+        <label>Realce
+          <select id="sel-modo">
+            <option value="color">Color (sellos y firmas)</option>
+            <option value="gris">Grises</option>
+            <option value="bn">Blanco y negro</option>
+          </select>
+        </label>
+        <label id="envoltorio-camaras" class="oculto">Camara
+          <select id="sel-camara"></select>
+        </label>
+      </div>
+
+      <div class="visor">
+        <video id="video" playsinline autoplay muted></video>
+        <canvas id="superposicion"></canvas>
+        <div id="pista" class="pista">Buscando documento...</div>
+      </div>
+
+      <div class="controles-inferior">
+        <label class="interruptor">
+          <input type="checkbox" id="chk-auto" />
+          <span>Captura automatica al alinear</span>
+        </label>
+        <label class="interruptor">
+          <input type="checkbox" id="chk-ajustar" checked />
+          <span>Ajustar al formato elegido</span>
+        </label>
+      </div>
+
+      <button id="btn-capturar" class="btn btn-principal btn-grande">Capturar</button>
+    </section>
+
+    <!-- Paso 3: resultado -->
+    <section id="pantalla-resultado" class="panel oculto">
+      <h2>Documento enderezado</h2>
+      <img id="img-resultado" alt="Documento enderezado" />
+      <dl id="meta-resultado" class="meta"></dl>
+      <h3>Respuesta de la integracion</h3>
+      <pre id="json-resultado"></pre>
+      <div class="fila-botones">
+        <button id="btn-nueva" class="btn btn-principal">Nueva captura</button>
+        <a id="enlace-descarga" class="btn btn-secundario" download>Descargar</a>
+      </div>
+    </section>
+  </main>
+
+  <script src="/estaticos/app.js"></script>
+</body>
+</html>

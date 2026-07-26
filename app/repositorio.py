@@ -385,8 +385,8 @@ def _guardar_en_bd(informe: Informe) -> dict:
                 INSERT INTO documento (
                     id, usuario_id, tipo, fuente_obtencion, institucion_nombre,
                     institucion_id, distrito, clave_norm, distrito_confianza,
-                    fecha_documento, archivo_ruta, estado_extraccion
-                ) VALUES (?, ?, 'laboratorio', 'foto', ?, ?, ?, ?, ?, ?, ?, ?)
+                    fecha_documento, archivo_ruta, estado_extraccion, fecha_carga
+                ) VALUES (?, ?, 'laboratorio', 'foto', ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     institucion_nombre = excluded.institucion_nombre,
                     institucion_id = excluded.institucion_id,
@@ -408,6 +408,12 @@ def _guardar_en_bd(informe: Informe) -> dict:
                     informe.fecha_documento,
                     f"capturas/{informe.captura_archivo}",
                     "procesado" if informe.estado == "ok" else "error",
+                    # La fecha se pasa explicita en hora local. El
+                    # `DEFAULT CURRENT_TIMESTAMP` de la tabla escribe **UTC**, y
+                    # como el resto de la app guarda y muestra hora local, los
+                    # documentos aparecian con la hora corrida (5 horas en el
+                    # futuro para Peru).
+                    informe.creado_en.replace("T", " "),
                 ),
             )
 

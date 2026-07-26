@@ -940,29 +940,45 @@
   function legalAHtml(texto) {
     const bloques = [];
     let lista = [];
+    let parrafo = [];
+
+    const negrita = (t) => escapar(t).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
     const cerrarLista = () => {
       if (lista.length) {
         bloques.push(`<ul>${lista.map((l) => `<li>${l}</li>`).join('')}</ul>`);
         lista = [];
       }
     };
-    const negrita = (t) =>
-      escapar(t).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    // El texto viene con saltos de linea duros: las lineas seguidas son un solo
+    // parrafo y solo una linea vacia lo cierra. Sin esto cada linea del original
+    // se veia como un parrafo aparte.
+    const cerrarParrafo = () => {
+      if (parrafo.length) {
+        bloques.push(`<p>${negrita(parrafo.join(' '))}</p>`);
+        parrafo = [];
+      }
+    };
 
     for (const linea of texto.split('\n')) {
       const limpia = linea.trim();
       if (limpia.startsWith('## ')) {
+        cerrarParrafo();
         cerrarLista();
         bloques.push(`<h2>${negrita(limpia.slice(3))}</h2>`);
       } else if (limpia.startsWith('- ')) {
+        cerrarParrafo();
         lista.push(negrita(limpia.slice(2)));
       } else if (!limpia) {
+        cerrarParrafo();
         cerrarLista();
+      } else if (lista.length) {
+        // Continuacion de la ultima vinieta.
+        lista[lista.length - 1] += ` ${negrita(limpia)}`;
       } else {
-        cerrarLista();
-        bloques.push(`<p>${negrita(limpia)}</p>`);
+        parrafo.push(limpia);
       }
     }
+    cerrarParrafo();
     cerrarLista();
     return bloques.join('');
   }

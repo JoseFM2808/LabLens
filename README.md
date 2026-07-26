@@ -7,14 +7,92 @@ el modo "documento" de la camara del telefono.
 El historial de cambios y el catalogo completo de funciones esta en
 [HISTORY.md](HISTORY.md).
 
-## Instalacion
+## Instalacion en un equipo nuevo
+
+Lo unico que hace falta tener instalado es **Python 3.10 o mas nuevo**
+([descarga](https://www.python.org/downloads/); en Windows hay que marcar
+*"Add python.exe to PATH"*). Todo lo demas lo baja el programa solo.
+
+| Sistema | Que hacer |
+|---|---|
+| Windows | Doble clic en **`LabLens.bat`**. |
+| macOS / Linux | `bash lablens.sh` |
+| Cualquiera, desde la terminal | `python iniciar.py` |
+
+La primera vez tarda unos minutos: crea el entorno `.venv`, descarga las
+dependencias (unos 70 MB) y carga los datos de referencia. Las veces siguientes
+arranca en segundos y **no baja nada**, porque recuerda la huella de
+`requirements.txt` en `.venv/.lablens-instalado.json` y solo reinstala si esa
+lista cambio.
+
+`iniciar.py` hace, en orden:
+
+1. Verifica la version de Python.
+2. Crea `.venv`. Si ya existe pero no funciona en este equipo, lo borra y lo
+   rehace: el entorno es desechable, se reconstruye entero desde
+   `requirements.txt`.
+3. Instala las dependencias y comprueba que se puedan importar.
+4. Carga los datos de referencia (distritos, RENIPRESS, rangos MINSA) desde
+   `BasedeDatos_Preparada/qhali.db`, porque `datos/` no viaja con el
+   repositorio. Ver [Cargar los datos de referencia](#cargar-los-datos-de-referencia).
+5. Arranca `servidor.py`.
+
+Opciones propias del preparador:
+
+| Opcion | Para que |
+|---|---|
+| `--solo-preparar` | Deja el equipo listo y no arranca el servidor. |
+| `--reinstalar` | Vuelve a bajar las dependencias aunque esten al dia. |
+| `--cargar-referencia` | Recarga los datos de referencia aunque la base exista. |
+| `--sin-referencia` | No toca la base de datos. |
+
+Cualquier otra opcion pasa tal cual a `servidor.py`:
+`python iniciar.py --puerto 9000`.
+
+### Si la red usa un espejo interno de paquetes
+
+`pip` lee `PIP_INDEX_URL` del entorno, asi que no hay nada que configurar en el
+codigo:
+
+```powershell
+$env:PIP_INDEX_URL = "https://espejo.interno/simple"
+python iniciar.py
+```
+
+### Si el `.venv` llego copiado de otra PC
+
+Pasa cuando la carpeta se sincroniza con OneDrive o se copia en un USB: el
+entorno queda apuntando a un Python que en este equipo no existe. `iniciar.py`
+lo detecta, avisa y lo reconstruye. No hay que borrar nada a mano.
+
+### En Windows, cuidado con las rutas largas
+
+Windows corta las rutas en 260 caracteres y dentro de `.venv` se acumula mucho
+anidamiento. Si la carpeta esta muy adentro, las librerias compiladas
+(`cryptography`, `opencv`) fallan al cargar con un error de *nombre de archivo
+demasiado largo*. `iniciar.py` avisa cuando la ruta pasa de 120 caracteres; la
+solucion es mover LabLens mas cerca de la raiz, por ejemplo `C:\LabLens`.
+
+### Instalacion manual
+
+Equivale a lo que hace `iniciar.py`, por si se prefiere paso a paso:
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe herramientas\cargar_referencia.py
 ```
 
+Tambien se puede instalar como paquete en otro entorno con `pip install .`
+(`pyproject.toml` lee las dependencias del mismo `requirements.txt`).
+
 ## Arranque
+
+```powershell
+python iniciar.py
+```
+
+O directo, con el entorno ya preparado:
 
 ```powershell
 .\.venv\Scripts\python.exe servidor.py
@@ -264,7 +342,11 @@ usuario -> documento -> estudio -> valor_extraido >- biomarcador
 ### Cargar los datos de referencia
 
 Los datos validados por el equipo (rangos MINSA, padron RENIPRESS, altitudes,
-ajuste por altitud) se cargan desde `BasedeDatos_Preparada/qhali.db`:
+ajuste por altitud) se cargan desde `BasedeDatos_Preparada/qhali.db`.
+
+**En un equipo nuevo esto ya ocurre solo**: `iniciar.py` corre esta carga la
+primera vez, cuando todavia no existe `datos/qhali.sqlite3`. Para volver a
+correrla a mano:
 
 ```powershell
 .\.venv\Scripts\python.exe herramientas\cargar_referencia.py

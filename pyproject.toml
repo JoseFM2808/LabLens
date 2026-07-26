@@ -1,0 +1,27 @@
+# Metadatos del paquete. El arranque normal no lo necesita: `iniciar.py` instala
+# desde requirements.txt, que sigue siendo la unica lista de dependencias (aca se
+# lee de ese mismo archivo, para no tener dos versiones de la verdad).
+#
+# Sirve para instalar LabLens como paquete en otro entorno:
+#     pip install .
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lablens"
+version = "0.1.0"
+description = "Escaner de documentos medicos con extraccion de biomarcadores"
+readme = "README.md"
+requires-python = ">=3.10"
+dynamic = ["dependencies"]
+
+[tool.setuptools]
+packages = ["app"]
+
+[tool.setuptools.package-data]
+app = ["estaticos/*"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }

@@ -1248,3 +1248,77 @@ subió a 6 s, que es más razonable también para una persona.
   Alcanza para reconocerla, pero un resumen de una línea se leería mejor.
 - Con muchas conversaciones la lista se va a hacer larga: hoy trae 30 y no hay
   búsqueda ni paginación.
+
+---
+
+## 2026-07-26 - Arranque en un equipo nuevo: el programa se instala solo
+
+Hasta ahora, poner LabLens en otra PC pedía cuatro pasos a mano (crear el
+entorno, instalar dependencias, cargar la base de referencia, arrancar) y ninguno
+avisaba si el anterior había fallado. Ahora hay un solo punto de entrada que se
+encarga de todo y es idempotente: correrlo dos veces no baja nada la segunda vez.
+
+### Archivos nuevos
+
+    iniciar.py        preparador y arranque; solo biblioteca estandar
+    LabLens.bat       doble clic en Windows; busca Python y llama a iniciar.py
+    lablens.sh        lo mismo en macOS y Linux
+    pyproject.toml    metadatos del paquete; lee las dependencias de requirements.txt
+
+`requirements.txt` sigue siendo la única lista de dependencias. `pyproject.toml`
+la lee de ahí con `[tool.setuptools.dynamic]` para no tener dos versiones de la
+verdad.
+
+### Que resuelve `iniciar.py`
+
+1. **Version de Python.** Corta con un mensaje claro debajo de 3.10. El piso es
+   real: `app/formatos.py` usa `str | None` en una anotación que se evalúa en
+   tiempo de ejecución.
+2. **Entorno roto.** Un `.venv` que llegó copiado de otra PC (OneDrive sincroniza
+   la carpeta del proyecto, y `.gitignore` no lo impide) apunta a un Python que
+   aquí no existe: la carpeta está pero el intérprete no arranca. Se detecta
+   ejecutándolo, y si falla se borra y se rehace. El entorno es desechable.
+3. **Descarga innecesaria.** Guarda la huella SHA-256 de `requirements.txt` en
+   `.venv/.lablens-instalado.json` y, además, comprueba que los módulos clave se
+   importen. Con las dos condiciones cumplidas ni siquiera invoca a pip.
+4. **Base vacía.** `datos/` está en `.gitignore`, así que en un equipo nuevo no
+   hay base. Si falta, corre `herramientas/cargar_referencia.py` desde
+   `BasedeDatos_Preparada/qhali.db`. Si esa carga falla, la app arranca igual:
+   quedarse sin escáner por no tener el padrón sería peor.
+
+Las opciones que `iniciar.py` no reconoce pasan tal cual a `servidor.py`. El
+analizador va con `allow_abbrev=False` a propósito: sin eso, `--recargar` (que es
+de `servidor.py`) se interpretaba como abreviatura de `--cargar-referencia`.
+
+### Verificación ejecutada
+
+Copia limpia del repositorio (sin `.venv`, sin `datos/`, sin `certs/`) en una
+carpeta aparte, y arranque desde cero:
+
+```
+entorno virtual creado ................... ok
+dependencias descargadas ................. 32 paquetes
+datos de referencia cargados ............. distrito 1895, establecimiento 26798
+                                           rango_referencia 111, biomarcador 45
+claves ajenas huerfanas .................. 0
+certificado autofirmado generado ......... certs/lablens.crt + .key
+GET /api/basedatos por HTTPS ............. 200, 24 tablas
+segunda corrida .......................... "Dependencias: al dia", sin red
+LabLens.bat --solo-preparar .............. ok (encuentra Python con "py -3")
+deteccion de entorno roto ................ 4 casos, todos correctos
+```
+
+### Un hallazgo de la prueba
+
+La primera copia limpia quedó en una ruta de 190 caracteres y `cryptography`
+falló al importar con *"el nombre del archivo o la extensión es demasiado
+largo"*: dentro de `.venv` el anidamiento se come lo que queda de los 260
+caracteres de Windows. El error no dice de dónde viene, así que `iniciar.py`
+ahora avisa cuando la carpeta del proyecto pasa de 120 caracteres.
+
+### Pendiente
+
+- Las dependencias van con `>=`, no hay archivo de bloqueo. Dos equipos
+  instalados en fechas distintas pueden quedar con versiones distintas.
+- No hay modo sin conexión: no se incluye una carpeta de ruedas descargadas.
+- `lablens.sh` no viene con permiso de ejecución; hay que llamarlo con `bash`.
